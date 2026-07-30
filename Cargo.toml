@@ -1,0 +1,56 @@
+[package]
+name = "rustshot"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+description = "A fast, lightweight screenshot and annotation tool"
+license = "MIT"
+repository = "https://github.com/CodyKoInABox/rustshot"
+keywords = ["screenshot", "screen-capture", "annotation", "windows"]
+categories = ["multimedia::images", "gui"]
+
+[dependencies]
+anyhow = "1.0"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+directories = "6.0"
+global-hotkey = "0.8"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+rfd = "0.17"
+serde = { version = "1.0", features = ["derive"] }
+softbuffer = "0.4"
+thiserror = "2.0"
+tiny-skia = "0.12"
+toml = "0.9"
+tray-icon = "0.24"
+winit = "0.30"
+xcap = "0.9"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+    "Win32_Storage_Xps",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_UI_Controls_Dialogs",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+opt-level = "z"
+panic = "abort"
+strip = "symbols"
+
+[lints.rust]
+unsafe_code = "warn"
+
+[lints.clippy]
+all = "warn"
