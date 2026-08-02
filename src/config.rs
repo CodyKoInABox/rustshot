@@ -21,6 +21,9 @@ use thiserror::Error;
 /// Name of Rustshot's settings file.
 pub const CONFIG_FILE_NAME: &str = "config.toml";
 
+/// Settings schema written and understood by this Rustshot release.
+pub const CURRENT_CONFIG_VERSION: u32 = 1;
+
 /// Default shortcut for capturing the configured monitor scope immediately.
 pub const DEFAULT_FULLSCREEN_SHORTCUT: &str = "control+shift+F11";
 
@@ -35,6 +38,8 @@ static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
+    /// Version of the persisted settings schema.
+    pub config_version: u32,
     /// Captures [`monitor_scope`](Self::monitor_scope) and saves it immediately.
     pub fullscreen_shortcut: Shortcut,
     /// Opens the interactive area-selection overlay.
@@ -157,6 +162,13 @@ impl Config {
 
     /// Checks all invariants that must hold before settings can be used.
     pub fn validate(&self) -> Result<(), ConfigValidationError> {
+        if self.config_version != CURRENT_CONFIG_VERSION {
+            return Err(ConfigValidationError::UnsupportedConfigVersion {
+                found: self.config_version,
+                supported: CURRENT_CONFIG_VERSION,
+            });
+        }
+
         let fullscreen = self.fullscreen_shortcut.as_hotkey().map_err(|source| {
             ConfigValidationError::InvalidShortcut {
                 binding: ShortcutBinding::Fullscreen,
@@ -204,6 +216,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            config_version: CURRENT_CONFIG_VERSION,
             fullscreen_shortcut: default_shortcut(DEFAULT_FULLSCREEN_SHORTCUT),
             region_shortcut: default_shortcut(DEFAULT_REGION_SHORTCUT),
             autosave_directory: default_autosave_directory(),
@@ -434,6 +447,16 @@ pub enum ShortcutError {
 /// A semantic error in an otherwise readable settings file.
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum ConfigValidationError {
+    /// The settings were written by an unsupported schema version.
+    #[error(
+        "configuration schema {found} is not supported; this release supports schema {supported}"
+    )]
+    UnsupportedConfigVersion {
+        /// Schema found in the settings file.
+        found: u32,
+        /// Schema understood by this release.
+        supported: u32,
+    },
     /// A capture shortcut could not be parsed.
     #[error("invalid {binding} shortcut `{shortcut}`: {reason}")]
     InvalidShortcut {
@@ -706,6 +729,7 @@ mod tests {
     #[test]
     fn toml_round_trip_preserves_all_settings() {
         let config = Config {
+            config_version: super::CURRENT_CONFIG_VERSION,
             fullscreen_shortcut: Shortcut::new("alt+F8").expect("valid shortcut"),
             region_shortcut: Shortcut::new("alt+F9").expect("valid shortcut"),
             autosave_directory: PathBuf::from(r"C:\Screenshots"),
@@ -736,6 +760,39 @@ mod tests {
             Config::load_from(path).expect("missing config should use defaults"),
             Config::default()
         );
+    }
+
+    #[test]
+    fn unversioned_pre_1_0_config_is_loaded_as_schema_one() {
+        let directory = TestDirectory::new();
+        let path = directory.path().join("config.toml");
+        let serialized = toml::to_string_pretty(&Config::default())
+            .expect("default config should serialize")
+            .replace("config_version = 1\n", "");
+        fs::write(&path, serialized).expect("legacy config should be written");
+
+        let loaded = Config::load_from(path).expect("legacy config should migrate implicitly");
+        assert_eq!(loaded.config_version, super::CURRENT_CONFIG_VERSION);
+    }
+
+    #[test]
+    fn unsupported_future_config_schema_is_rejected() {
+        let directory = TestDirectory::new();
+        let path = directory.path().join("config.toml");
+        let serialized = toml::to_string_pretty(&Config::default())
+            .expect("default config should serialize")
+            .replace("config_version = 1", "config_version = 2");
+        fs::write(&path, serialized).expect("future config should be written");
+
+        assert!(matches!(
+            Config::load_from(path),
+            Err(ConfigError::Validation(
+                ConfigValidationError::UnsupportedConfigVersion {
+                    found: 2,
+                    supported: 1
+                }
+            ))
+        ));
     }
 
     #[test]

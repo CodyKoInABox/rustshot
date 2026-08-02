@@ -71,9 +71,25 @@ cannot be validated reliably by headless CI.
 
 ## Automated release gate
 
+Close every running `rustshot.exe` before the release build; Windows does not allow Cargo to
+replace an executable while it is running.
+
 ```powershell
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked --all-targets
 cargo build --release --locked
 ```
+
+## Interactive native integration tests
+
+These opt-in tests exercise the real Windows capture and clipboard backends. Run them only in an
+unlocked desktop session; the clipboard test replaces the current clipboard image.
+
+```powershell
+cargo test --locked --test windows_native -- --ignored --test-threads=1
+```
+
+Before handing a failure report to another person, choose **Create diagnostic report** from the tray
+menu and verify the report contains the expected version, target, configuration schema, and recent
+error without any information you do not intend to share.

@@ -36,6 +36,7 @@ use winit::{
 };
 
 use crate::{
+    diagnostics,
     overlay::{EditorPreferences, Overlay, OverlayOutcome},
     settings::{run_settings_dialog, SettingsResponder, SettingsWindowHandle},
 };
@@ -44,6 +45,7 @@ const MENU_CAPTURE_REGION: &str = "capture-region";
 const MENU_CAPTURE_FULLSCREEN: &str = "capture-fullscreen";
 const MENU_OPEN_SCREENSHOTS: &str = "open-screenshots";
 const MENU_OPEN_SETTINGS: &str = "open-settings";
+const MENU_DIAGNOSTICS: &str = "diagnostics";
 const MENU_QUIT: &str = "quit";
 
 #[derive(Clone, Copy)]
@@ -485,6 +487,24 @@ impl RustshotApp {
                 }
             }
             MENU_OPEN_SETTINGS => self.open_settings_window(),
+            MENU_DIAGNOSTICS => match diagnostics::write_report(&self.config) {
+                Ok(report) => {
+                    let directory = report.parent().unwrap_or_else(|| Path::new("."));
+                    if let Err(error) = open_path(directory) {
+                        show_error("Could not open diagnostics", &error.to_string());
+                    } else {
+                        MessageDialog::new()
+                            .set_level(MessageLevel::Info)
+                            .set_title("Diagnostic report created")
+                            .set_description(format!(
+                                "Rustshot created `{}`. Review it before attaching it to a support request.",
+                                report.display()
+                            ))
+                            .show();
+                    }
+                }
+                Err(error) => show_error("Could not create diagnostics", &error.to_string()),
+            },
             MENU_QUIT => {
                 if self.busy || self.settings_window.is_some() {
                     show_error(
@@ -849,14 +869,18 @@ fn build_tray_icon() -> Result<TrayIcon> {
     let screenshots =
         MenuItem::with_id(MENU_OPEN_SCREENSHOTS, "Open screenshot &folder", true, None);
     let settings = MenuItem::with_id(MENU_OPEN_SETTINGS, "&Settings...", true, None);
-    let separator = PredefinedMenuItem::separator();
+    let diagnostics = MenuItem::with_id(MENU_DIAGNOSTICS, "Create &diagnostic report", true, None);
+    let capture_separator = PredefinedMenuItem::separator();
+    let quit_separator = PredefinedMenuItem::separator();
     let quit = MenuItem::with_id(MENU_QUIT, "&Quit Rustshot", true, None);
     menu.append_items(&[
         &region,
         &fullscreen,
-        &separator,
+        &capture_separator,
         &screenshots,
         &settings,
+        &diagnostics,
+        &quit_separator,
         &quit,
     ])?;
 
@@ -950,6 +974,7 @@ fn open_path(path: &Path) -> Result<()> {
 }
 
 fn show_error(title: &str, description: &str) {
+    diagnostics::record_error(title, description);
     MessageDialog::new()
         .set_level(MessageLevel::Error)
         .set_title(title)

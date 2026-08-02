@@ -1,0 +1,23 @@
+# Changelog
+
+All notable user-visible changes to Rustshot are recorded here. Rustshot follows semantic
+versioning for the desktop application and its persisted configuration, not for the unpublished
+internal Rust library crate.
+
+## [1.0.0] - Unreleased
+
+### Added
+
+- Full-screen and region capture workflows for 64-bit Windows.
+- Vector annotation, secure redaction, pixelation, cropping, clipboard export, and printing.
+- Configurable global shortcuts, image encoding, automatic copy, and automatic save.
+- Single-instance enforcement for each Windows login session.
+- Bounded local diagnostic logging and an on-demand support report.
+- A versioned configuration schema and explicit compatibility policy.
+
+### Release preparation
+
+- Locked-dependency CI, dependency advisory and license checks, native integration smoke tests,
+  and a draft GitHub release workflow for `x86_64-pc-windows-msvc`.
+
+[1.0.0]: https://github.com/CodyKoInABox/rustshot/releases/tag/v1.0.0

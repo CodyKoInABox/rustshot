@@ -19,7 +19,7 @@ use anyhow::{bail, Context as _, Result};
 use rfd::FileDialog;
 use rustshot::config::{
     Config, ConfigValidationError, MonitorScope, PngCompression, ScreenshotFormat, Shortcut,
-    ShortcutBinding,
+    ShortcutBinding, CURRENT_CONFIG_VERSION,
 };
 use windows::{
     core::{Error as WindowsError, PCWSTR},
@@ -974,6 +974,7 @@ impl SettingsValues {
             }
         };
         let config = Config {
+            config_version: CURRENT_CONFIG_VERSION,
             fullscreen_shortcut,
             region_shortcut,
             autosave_directory: self.autosave_directory,
@@ -990,6 +991,7 @@ impl SettingsValues {
         };
         config.validate().map_err(|error| {
             let control_id = match &error {
+                ConfigValidationError::UnsupportedConfigVersion { .. } => IDC_RESTORE_DEFAULTS,
                 ConfigValidationError::InvalidShortcut { binding, .. } => match binding {
                     ShortcutBinding::Fullscreen => IDC_FULLSCREEN_SHORTCUT,
                     ShortcutBinding::Region => IDC_REGION_SHORTCUT,
@@ -1458,6 +1460,7 @@ mod tests {
     #[test]
     fn every_config_field_round_trips_through_settings_values() {
         let expected = Config {
+            config_version: CURRENT_CONFIG_VERSION,
             fullscreen_shortcut: Shortcut::new("alt+F8").unwrap(),
             region_shortcut: Shortcut::new("control+shift+KeyR").unwrap(),
             autosave_directory: PathBuf::from(r"C:\Capturas\área com espaços"),

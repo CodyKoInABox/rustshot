@@ -409,3 +409,47 @@ impl Drop for DibSurface {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{composite_monitor, rgba_len, CapturedMonitor};
+
+    #[test]
+    fn monitor_pixels_are_composited_at_their_virtual_desktop_offset() {
+        let capture = CapturedMonitor {
+            x: -1,
+            y: 2,
+            width: 2,
+            height: 1,
+            rgba: vec![1, 2, 3, 4, 5, 6, 7, 8],
+        };
+        let mut destination = vec![0; 4 * 2 * 4];
+
+        composite_monitor(&capture, -2, 1, 4 * 4, &mut destination)
+            .expect("valid monitor should composite");
+
+        assert_eq!(&destination[20..28], capture.rgba.as_slice());
+        assert!(destination[..20].iter().all(|byte| *byte == 0));
+        assert!(destination[28..].iter().all(|byte| *byte == 0));
+    }
+
+    #[test]
+    fn monitor_compositing_rejects_a_malformed_capture_buffer() {
+        let capture = CapturedMonitor {
+            x: 0,
+            y: 0,
+            width: 2,
+            height: 2,
+            rgba: vec![0; 3],
+        };
+        let mut destination = vec![0; 2 * 2 * 4];
+
+        assert!(composite_monitor(&capture, 0, 0, 2 * 4, &mut destination).is_err());
+    }
+
+    #[test]
+    fn rgba_length_checks_multiplication_overflow() {
+        assert_eq!(rgba_len(2, 3).expect("small image should fit"), 24);
+        assert!(rgba_len(u32::MAX, u32::MAX).is_err());
+    }
+}

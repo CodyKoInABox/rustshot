@@ -1,0 +1,17 @@
+Rustshot third-party license notices
+====================================
+
+This file is generated from Cargo.lock by cargo-about.
+
+{{#each licenses}}
+-------------------------------------------------------------------------------
+{{name}}
+
+Used by:
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}{{#if crate.repository}} ({{crate.repository}}){{/if}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}

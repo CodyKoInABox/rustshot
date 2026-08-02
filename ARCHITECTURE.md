@@ -24,6 +24,11 @@ settings dialog has its own UI thread and submits validated candidates back to t
 hotkey replacement and atomic persistence complete before the dialog reports success. The app
 ignores repeated capture shortcuts until the current capture or settings session ends.
 
+A named Windows mutex prevents more than one Rustshot tray process from running in the same login
+session. The process also maintains a bounded local diagnostic log. On request, the tray generates a
+plain-text support report from version, architecture, non-secret settings, paths, and recent errors;
+captured pixels and clipboard contents are never logged.
+
 ## Modules
 
 - `config`: validated, atomically persisted settings, editor preferences, and shortcut parsing.
@@ -37,6 +42,17 @@ ignores repeated capture shortcuts until the current capture or settings session
 - `overlay`: region selection, handles, annotation gestures, toolbar, and object manipulation.
 - `settings`: native Windows settings dialog, control validation, and folder-picker bridge.
 - `app`: tray lifecycle, workers, automatic region actions, preference persistence, and exports.
+- `single_instance`: per-session named-mutex ownership for the tray process.
+- `diagnostics`: bounded local error logging and on-demand support-report generation.
+
+## Compatibility boundaries
+
+The persisted configuration carries an explicit schema version. Unversioned pre-1.0 files map to
+schema 1, while unsupported future schemas are rejected before any overwrite. The desktop workflow
+and schema follow the compatibility policy in `SUPPORT.md`.
+
+The library target exists to separate and test internal modules. The Cargo package is not published,
+so its Rust module API is not part of the 1.x compatibility promise.
 
 ## Annotation and history model
 
