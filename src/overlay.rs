@@ -1,14 +1,21 @@
-//! Full-screen region selection and annotation window.
+//! Full-screen region selection and allocation-conscious annotation window.
 
-use std::{num::NonZeroU32, rc::Rc};
+use std::{mem::size_of, num::NonZeroU32, rc::Rc};
 
 use anyhow::{Context as _, Result};
 use rustshot::{
-    annotation::{Annotation, AnnotationDocument, Color, Point, StrokeStyle},
+    annotation::{
+        draw_text_bgrx, measure_text, Annotation, AnnotationDocument, Bounds, Color, Point,
+        StrokeStyle,
+    },
+    config::{EditorTool, RgbColor},
     frame::{Frame, PhysicalPoint, PhysicalRect},
 };
 use softbuffer::{Context, Surface};
-use windows::Win32::Foundation::HWND;
+use windows::Win32::{
+    Foundation::{COLORREF, HWND, LPARAM},
+    UI::Controls::Dialogs::{ChooseColorW, CC_FULLOPEN, CC_RGBINIT, CHOOSECOLORW},
+};
 use winit::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::{ElementState, MouseButton, WindowEvent},
@@ -20,26 +27,40 @@ use winit::{
 };
 
 const MIN_SELECTION_SIZE: u32 = 3;
+const MIN_OBJECT_SIZE: f32 = 3.0;
+const HANDLE_RADIUS: i32 = 5;
+const HANDLE_HIT_RADIUS: f32 = 9.0;
 const TOOLBAR_PADDING: i32 = 4;
 const TOOLBAR_GAP: i32 = 8;
-const TOOLBAR_BUTTONS: usize = 12;
-const DEFAULT_BUTTON_SIZE: i32 = 40;
-const MIN_BUTTON_SIZE: i32 = 26;
+const TOOLBAR_BUTTONS: usize = 21;
+const TOOLBAR_COLUMNS: usize = 11;
+const DEFAULT_BUTTON_SIZE: i32 = 38;
+const MIN_BUTTON_SIZE: i32 = 24;
 
 const PALETTE: [Color; 6] = [
-    Color::RED,
+    Color::rgba(255, 64, 64, 255),
     Color::rgba(255, 196, 0, 255),
     Color::rgba(40, 205, 90, 255),
     Color::rgba(45, 135, 255, 255),
-    Color::rgba(255, 255, 255, 255),
+    Color::WHITE,
     Color::BLACK,
 ];
 const STROKE_WIDTHS: [f32; 4] = [2.0, 4.0, 7.0, 11.0];
+const TEXT_SIZES: [f32; 4] = [14.0, 18.0, 24.0, 32.0];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EditorPreferences {
+    pub tool: EditorTool,
+    pub color: RgbColor,
+    pub stroke_width: u8,
+}
 
 /// Result of one overlay event.
 pub enum OverlayOutcome {
     None,
     Cancel,
+    /// Region selected while an automatic post-capture action is configured.
+    Finish(Frame),
     Save(Frame),
     Copy(Frame),
     Print(Frame),
@@ -57,10 +78,18 @@ pub struct Overlay {
     selection_cursor: Option<PixelPoint>,
     editor: Option<Editor>,
     modifiers: ModifiersState,
+    preferences: EditorPreferences,
+    finish_after_selection: bool,
+    hovered_button: Option<ToolbarButton>,
 }
 
 impl Overlay {
-    pub fn new(event_loop: &ActiveEventLoop, source: Frame) -> Result<Self> {
+    pub fn new(
+        event_loop: &ActiveEventLoop,
+        source: Frame,
+        preferences: EditorPreferences,
+        finish_after_selection: bool,
+    ) -> Result<Self> {
         let origin = source.origin();
         let attributes = Window::default_attributes()
             .with_title("Rustshot")
@@ -100,6 +129,9 @@ impl Overlay {
             selection_cursor: None,
             editor: None,
             modifiers: ModifiersState::empty(),
+            preferences,
+            finish_after_selection,
+            hovered_button: None,
         })
     }
 
@@ -127,6 +159,13 @@ impl Overlay {
         }
     }
 
+    #[must_use]
+    pub fn editor_preferences(&self) -> EditorPreferences {
+        self.editor
+            .as_ref()
+            .map_or(self.preferences, Editor::preferences)
+    }
+
     /// Handles input and returns an export action when the session is done.
     pub fn handle_event(&mut self, event: WindowEvent) -> OverlayOutcome {
         match event {
@@ -150,8 +189,10 @@ impl Overlay {
                 } else {
                     pointer.clamp_to_edges(&self.source)
                 };
+                let previous_hover = self.hovered_button;
+                self.hovered_button = self.toolbar_button_at(self.cursor);
                 self.update_pointer_cursor();
-                let changed = if self.editor.is_some() {
+                let interaction_changed = if self.editor.is_some() {
                     self.update_gesture()
                 } else if self.selection_anchor.is_some() {
                     let changed = self.selection_cursor != Some(self.cursor);
@@ -160,6 +201,7 @@ impl Overlay {
                 } else {
                     false
                 };
+                let changed = interaction_changed || previous_hover != self.hovered_button;
                 if changed {
                     self.window.request_redraw();
                 }
@@ -170,16 +212,30 @@ impl Overlay {
                 button: MouseButton::Left,
                 ..
             } => self.handle_left_button(state),
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Right,
+                ..
+            } => self.handle_right_button(),
             WindowEvent::KeyboardInput {
                 event,
                 is_synthetic: false,
                 ..
-            } if event.state == ElementState::Pressed => self.handle_key(&event.logical_key),
+            } if event.state == ElementState::Pressed => {
+                self.handle_key(&event.logical_key, event.text.as_deref())
+            }
             _ => OverlayOutcome::None,
         }
     }
 
     fn handle_left_button(&mut self, state: ElementState) -> OverlayOutcome {
+        if self
+            .editor
+            .as_ref()
+            .is_some_and(|editor| editor.text_draft.is_some())
+        {
+            return OverlayOutcome::None;
+        }
         if self.editor.is_none() {
             return self.handle_selection_button(state);
         }
@@ -206,6 +262,20 @@ impl Overlay {
         }
     }
 
+    fn handle_right_button(&mut self) -> OverlayOutcome {
+        if self.toolbar_button_at(self.cursor) != Some(ToolbarButton::Color) {
+            return OverlayOutcome::None;
+        }
+        match self.choose_custom_color() {
+            Ok(true) => {
+                self.window.request_redraw();
+                OverlayOutcome::None
+            }
+            Ok(false) => OverlayOutcome::None,
+            Err(error) => OverlayOutcome::Error(error.to_string()),
+        }
+    }
+
     fn handle_selection_button(&mut self, state: ElementState) -> OverlayOutcome {
         match state {
             ElementState::Pressed => {
@@ -229,6 +299,13 @@ impl Overlay {
                     return OverlayOutcome::None;
                 }
 
+                if self.finish_after_selection {
+                    return match self.crop_source(selection) {
+                        Ok(frame) => OverlayOutcome::Finish(frame),
+                        Err(error) => OverlayOutcome::Error(error.to_string()),
+                    };
+                }
+
                 match self.create_editor(selection) {
                     Ok(editor) => {
                         self.editor = Some(editor);
@@ -242,7 +319,7 @@ impl Overlay {
         }
     }
 
-    fn create_editor(&self, selection: PixelRect) -> Result<Editor> {
+    fn crop_source(&self, selection: PixelRect) -> Result<Frame> {
         let source_origin = self.source.origin();
         let x = source_origin
             .x()
@@ -255,29 +332,52 @@ impl Overlay {
         let crop_rect =
             PhysicalRect::new(PhysicalPoint::new(x, y), selection.width, selection.height)
                 .context("selection rectangle is invalid")?;
-        let frame = self
-            .source
+        self.source
             .crop(crop_rect)
-            .context("could not crop the selected pixels")?;
+            .context("could not crop the selected pixels")
+    }
+
+    fn create_editor(&self, selection: PixelRect) -> Result<Editor> {
+        let frame = self.crop_source(selection)?;
 
         Ok(Editor {
             selection,
             frame,
             document: AnnotationDocument::new(),
-            tool: Tool::Pen,
-            color_index: 0,
-            width_index: 1,
+            tool: Tool::from_preference(self.preferences.tool),
+            color: Color::rgba(
+                self.preferences.color.red,
+                self.preferences.color.green,
+                self.preferences.color.blue,
+                255,
+            ),
+            width_index: usize::from(self.preferences.stroke_width.min(3)),
             gesture: None,
+            crop_gesture: None,
+            text_draft: None,
+            selected: None,
+            manipulation_base: None,
             committed_preview: None,
         })
     }
 
-    fn handle_key(&mut self, key: &Key) -> OverlayOutcome {
+    fn handle_key(&mut self, key: &Key, text: Option<&str>) -> OverlayOutcome {
+        if self
+            .editor
+            .as_ref()
+            .is_some_and(|editor| editor.text_draft.is_some())
+        {
+            return self.handle_text_key(key, text);
+        }
         if matches!(key, Key::Named(NamedKey::Escape)) {
             if let Some(editor) = &mut self.editor {
-                if editor.gesture.take().is_some() {
-                    self.window.request_redraw();
-                    return OverlayOutcome::None;
+                match editor.cancel_active_interaction() {
+                    Ok(true) => {
+                        self.window.request_redraw();
+                        return OverlayOutcome::None;
+                    }
+                    Ok(false) => {}
+                    Err(error) => return OverlayOutcome::Error(error.to_string()),
                 }
             }
             return OverlayOutcome::Cancel;
@@ -301,16 +401,11 @@ impl Overlay {
             return OverlayOutcome::None;
         }
 
-        if character_is(key, "p") {
-            self.editor.as_mut().expect("editor checked above").tool = Tool::Pen;
-        } else if character_is(key, "h") {
-            self.editor.as_mut().expect("editor checked above").tool = Tool::Highlighter;
-        } else if character_is(key, "l") {
-            self.editor.as_mut().expect("editor checked above").tool = Tool::Line;
-        } else if character_is(key, "a") {
-            self.editor.as_mut().expect("editor checked above").tool = Tool::Arrow;
-        } else if character_is(key, "r") {
-            self.editor.as_mut().expect("editor checked above").tool = Tool::Rectangle;
+        let tool = Tool::ALL
+            .into_iter()
+            .find(|tool| character_is(key, tool.shortcut()));
+        if let Some(tool) = tool {
+            self.editor.as_mut().expect("editor checked above").tool = tool;
         } else if character_is(key, "u") {
             let edit = self.editor.as_mut().expect("editor checked above").undo();
             return self.finish_document_edit(edit);
@@ -326,6 +421,18 @@ impl Overlay {
             return self.export(ExportKind::Copy);
         } else if character_is(key, "o") {
             return self.export(ExportKind::Print);
+        } else if character_is(key, "k") {
+            return match self.choose_custom_color() {
+                Ok(_) => OverlayOutcome::None,
+                Err(error) => OverlayOutcome::Error(error.to_string()),
+            };
+        } else if matches!(key, Key::Named(NamedKey::Delete)) {
+            let edit = self
+                .editor
+                .as_mut()
+                .expect("editor checked above")
+                .delete_selected();
+            return self.finish_document_edit(edit);
         } else if matches!(key, Key::Named(NamedKey::Enter)) {
             return self.export(ExportKind::Copy);
         } else {
@@ -336,22 +443,107 @@ impl Overlay {
         OverlayOutcome::None
     }
 
+    fn handle_text_key(&mut self, key: &Key, text: Option<&str>) -> OverlayOutcome {
+        let editor = self.editor.as_mut().expect("text input requires an editor");
+        if matches!(key, Key::Named(NamedKey::Escape)) {
+            editor.text_draft = None;
+            self.window.request_redraw();
+            return OverlayOutcome::None;
+        }
+        if matches!(key, Key::Named(NamedKey::Enter)) {
+            if self.modifiers.shift_key() {
+                editor
+                    .text_draft
+                    .as_mut()
+                    .expect("draft checked")
+                    .text
+                    .push('\n');
+                self.window.request_redraw();
+                return OverlayOutcome::None;
+            }
+            let edit = editor.commit_text_draft();
+            return self.finish_document_edit(edit);
+        }
+        if matches!(key, Key::Named(NamedKey::Backspace)) {
+            editor
+                .text_draft
+                .as_mut()
+                .expect("draft checked")
+                .text
+                .pop();
+            self.window.request_redraw();
+            return OverlayOutcome::None;
+        }
+        if !self.modifiers.control_key() && !self.modifiers.super_key() {
+            if let Some(text) = text.filter(|value| !value.chars().any(char::is_control)) {
+                editor
+                    .text_draft
+                    .as_mut()
+                    .expect("draft checked")
+                    .text
+                    .push_str(text);
+                self.window.request_redraw();
+            }
+        }
+        OverlayOutcome::None
+    }
+
     fn begin_gesture(&mut self) -> Result<bool> {
         let Some(editor) = &mut self.editor else {
             return Ok(false);
         };
+        if editor.tool == Tool::Crop {
+            return Ok(editor.begin_crop(self.cursor));
+        }
         if !editor.selection.contains(self.cursor) {
             return Ok(false);
         }
         let point = editor.selection.to_annotation_point(self.cursor);
         let tool = editor.tool;
+        if tool == Tool::Select {
+            return editor.begin_object_transform(point);
+        }
+        if tool == Tool::Eraser {
+            let changed = editor.erase_at(point)?;
+            return Ok(changed);
+        }
+        if tool == Tool::Eyedropper {
+            let offset = (usize::try_from(self.cursor.y).unwrap_or_default()
+                * usize::try_from(self.source.width()).unwrap_or_default()
+                + usize::try_from(self.cursor.x).unwrap_or_default())
+                * 4;
+            if let Some(pixel) = self.source.rgba().get(offset..offset + 3) {
+                editor.color = Color::rgba(pixel[0], pixel[1], pixel[2], 255);
+                editor.tool = Tool::Pen;
+                return Ok(true);
+            }
+            return Ok(false);
+        }
+        if tool == Tool::Text {
+            editor.text_draft = Some(TextDraft::new(
+                point,
+                None,
+                editor.color,
+                editor.text_size(),
+            ));
+            return Ok(true);
+        }
         let style = editor.style()?;
         let shape = match tool {
             Tool::Pen | Tool::Highlighter => GestureShape::Path(vec![point]),
-            Tool::Line | Tool::Arrow | Tool::Rectangle => GestureShape::Segment {
+            Tool::Line
+            | Tool::Arrow
+            | Tool::Rectangle
+            | Tool::Ellipse
+            | Tool::Redact
+            | Tool::Pixelate
+            | Tool::Callout => GestureShape::Segment {
                 start: point,
                 current: point,
             },
+            Tool::Select | Tool::Text | Tool::Eraser | Tool::Crop | Tool::Eyedropper => {
+                return Ok(false)
+            }
         };
         editor.gesture = Some(Gesture { tool, style, shape });
         Ok(true)
@@ -361,18 +553,23 @@ impl Overlay {
         let Some(editor) = &mut self.editor else {
             return false;
         };
+        if editor.crop_gesture.is_some() {
+            return editor.update_crop(self.cursor, self.source.width(), self.source.height());
+        }
         let point = editor.selection.to_annotation_point_clamped(self.cursor);
-        editor
-            .gesture
-            .as_mut()
-            .is_some_and(|gesture| gesture.update(point))
+        editor.update_gesture(point)
     }
 
     fn commit_gesture(&mut self) -> Result<()> {
         let Some(editor) = &mut self.editor else {
             return Ok(());
         };
-        if editor.commit_active_gesture()? {
+        let changed = if editor.crop_gesture.is_some() {
+            editor.commit_crop(&self.source)?
+        } else {
+            editor.commit_active_gesture()?
+        };
+        if changed {
             self.window.request_redraw();
         }
         Ok(())
@@ -415,11 +612,20 @@ impl Overlay {
             return OverlayOutcome::None;
         };
         match button {
+            ToolbarButton::Select => editor.tool = Tool::Select,
             ToolbarButton::Pen => editor.tool = Tool::Pen,
             ToolbarButton::Highlighter => editor.tool = Tool::Highlighter,
             ToolbarButton::Line => editor.tool = Tool::Line,
             ToolbarButton::Arrow => editor.tool = Tool::Arrow,
             ToolbarButton::Rectangle => editor.tool = Tool::Rectangle,
+            ToolbarButton::Ellipse => editor.tool = Tool::Ellipse,
+            ToolbarButton::Text => editor.tool = Tool::Text,
+            ToolbarButton::Callout => editor.tool = Tool::Callout,
+            ToolbarButton::Redact => editor.tool = Tool::Redact,
+            ToolbarButton::Pixelate => editor.tool = Tool::Pixelate,
+            ToolbarButton::Eraser => editor.tool = Tool::Eraser,
+            ToolbarButton::Crop => editor.tool = Tool::Crop,
+            ToolbarButton::Eyedropper => editor.tool = Tool::Eyedropper,
             ToolbarButton::Undo => {
                 let edit = editor.undo();
                 return self.finish_document_edit(edit);
@@ -429,10 +635,19 @@ impl Overlay {
                 return self.finish_document_edit(edit);
             }
             ToolbarButton::Color => {
-                editor.color_index = (editor.color_index + 1) % PALETTE.len();
+                let index = PALETTE.iter().position(|color| *color == editor.color);
+                editor.color = PALETTE[index.map_or(0, |index| (index + 1) % PALETTE.len())];
+                if let Some(selected) = editor.selected {
+                    let edit = editor.restyle_selected(selected);
+                    return self.finish_document_edit(edit);
+                }
             }
             ToolbarButton::Width => {
                 editor.width_index = (editor.width_index + 1) % STROKE_WIDTHS.len();
+                if let Some(selected) = editor.selected {
+                    let edit = editor.restyle_selected(selected);
+                    return self.finish_document_edit(edit);
+                }
             }
             ToolbarButton::Save | ToolbarButton::Copy | ToolbarButton::Print => {
                 unreachable!("export buttons were handled above")
@@ -440,6 +655,44 @@ impl Overlay {
         }
         self.window.request_redraw();
         OverlayOutcome::None
+    }
+
+    #[allow(unsafe_code)]
+    fn choose_custom_color(&mut self) -> Result<bool> {
+        let owner = self.owner_hwnd()?;
+        let Some(editor) = &mut self.editor else {
+            return Ok(false);
+        };
+        let mut custom = [COLORREF(0); 16];
+        let rgb = u32::from(editor.color.red())
+            | (u32::from(editor.color.green()) << 8)
+            | (u32::from(editor.color.blue()) << 16);
+        let mut chooser = CHOOSECOLORW {
+            lStructSize: u32::try_from(size_of::<CHOOSECOLORW>())
+                .context("color dialog structure size overflow")?,
+            hwndOwner: owner,
+            rgbResult: COLORREF(rgb),
+            lpCustColors: custom.as_mut_ptr(),
+            Flags: CC_FULLOPEN | CC_RGBINIT,
+            lCustData: LPARAM(0),
+            ..Default::default()
+        };
+        // SAFETY: the structure and custom-color buffer remain valid for the modal call.
+        if !unsafe { ChooseColorW(&mut chooser) }.as_bool() {
+            return Ok(false);
+        }
+        let value = chooser.rgbResult.0;
+        editor.color = Color::rgba(
+            (value & 0xff) as u8,
+            ((value >> 8) & 0xff) as u8,
+            ((value >> 16) & 0xff) as u8,
+            255,
+        );
+        if let Some(selected) = editor.selected {
+            editor.restyle_selected(selected)?;
+        }
+        self.window.request_redraw();
+        Ok(true)
     }
 
     fn export(&mut self, kind: ExportKind) -> OverlayOutcome {
@@ -458,8 +711,12 @@ impl Overlay {
     }
 
     fn update_pointer_cursor(&self) {
-        let icon = if self.editor.is_some() && self.toolbar_button_at(self.cursor).is_some() {
+        let icon = if self.hovered_button.is_some() {
             CursorIcon::Pointer
+        } else if self.editor.as_ref().is_some_and(|editor| {
+            editor.tool == Tool::Select && editor.object_handle_at(self.cursor).is_some()
+        }) {
+            CursorIcon::Move
         } else {
             CursorIcon::Crosshair
         };
@@ -483,25 +740,59 @@ impl Overlay {
         draw_source_dimmed(&mut buffer, &self.source, 42);
 
         if let Some(editor) = &self.editor {
+            let selection = editor
+                .crop_gesture
+                .as_ref()
+                .map_or(editor.selection, |gesture| gesture.preview);
+            if editor.crop_gesture.is_some() {
+                blit_region_undimmed(&mut buffer, &self.source, selection);
+            }
             blit_frame(
                 &mut buffer,
                 width,
                 height,
-                editor.committed_frame(),
+                editor.presentation_frame(),
                 editor.selection.x,
                 editor.selection.y,
             );
             if let Some(gesture) = &editor.gesture {
                 draw_gesture_preview(&mut buffer, width, height, editor.selection, gesture);
             }
-            draw_border(&mut buffer, width, height, editor.selection, 0x00ffffff);
-            draw_toolbar(
-                &mut buffer,
-                width,
-                height,
-                editor,
-                editor.toolbar_layout(width, height, self.window.scale_factor()),
-            );
+            if let Some(draft) = &editor.text_draft {
+                draw_text_draft(&mut buffer, width, height, editor.selection, draft);
+            }
+            draw_border(&mut buffer, width, height, selection, 0x00ffffff);
+            if editor.tool == Tool::Crop {
+                draw_resize_handles(&mut buffer, width, height, pixel_rect_bounds(selection));
+            }
+            let selected_bounds = editor
+                .gesture
+                .as_ref()
+                .and_then(|gesture| match &gesture.shape {
+                    GestureShape::Object { preview, .. } => Some(preview.bounds()),
+                    _ => None,
+                })
+                .or_else(|| {
+                    editor
+                        .selected
+                        .and_then(|index| editor.document.annotation(index))
+                        .map(Annotation::bounds)
+                });
+            if let Some(selected_bounds) = selected_bounds {
+                draw_object_selection(
+                    &mut buffer,
+                    width,
+                    height,
+                    editor.selection,
+                    selected_bounds,
+                );
+            }
+            let layout = editor.toolbar_layout(width, height, self.window.scale_factor());
+            draw_toolbar(&mut buffer, width, height, editor, layout);
+            draw_shortcut_hints(&mut buffer, width, height);
+            if let Some(button) = self.hovered_button {
+                draw_tooltip(&mut buffer, width, height, layout, button.tooltip());
+            }
         } else if let (Some(anchor), Some(cursor)) = (self.selection_anchor, self.selection_cursor)
         {
             if let Some(selection) = PixelRect::between(anchor, cursor) {
@@ -523,17 +814,30 @@ struct Editor {
     frame: Frame,
     document: AnnotationDocument,
     tool: Tool,
-    color_index: usize,
+    color: Color,
     width_index: usize,
     gesture: Option<Gesture>,
+    crop_gesture: Option<CropGesture>,
+    text_draft: Option<TextDraft>,
+    selected: Option<usize>,
+    /// Cached document without the actively transformed object; allocated once per drag.
+    manipulation_base: Option<Frame>,
     /// Exact flattening of committed commands. `None` means the document is
     /// empty and `frame` itself is the committed image.
     committed_preview: Option<Frame>,
 }
 
 impl Editor {
+    fn preferences(&self) -> EditorPreferences {
+        EditorPreferences {
+            tool: self.tool.preference(),
+            color: RgbColor::new(self.color.red(), self.color.green(), self.color.blue()),
+            stroke_width: u8::try_from(self.width_index).unwrap_or(1).min(3),
+        }
+    }
+
     fn style(&self) -> Result<StrokeStyle> {
-        let base = PALETTE[self.color_index];
+        let base = self.color;
         let (color, width) = if self.tool == Tool::Highlighter {
             (
                 Color::rgba(base.red(), base.green(), base.blue(), 96),
@@ -543,6 +847,10 @@ impl Editor {
             (base, STROKE_WIDTHS[self.width_index])
         };
         StrokeStyle::new(color, width).context("invalid annotation style")
+    }
+
+    fn text_size(&self) -> f32 {
+        TEXT_SIZES[self.width_index]
     }
 
     fn annotation_for_gesture(gesture: &Gesture) -> Result<Annotation> {
@@ -562,6 +870,15 @@ impl Editor {
             (Tool::Rectangle, GestureShape::Segment { start, current }) => {
                 Annotation::rectangle(*start, *current, gesture.style)
             }
+            (Tool::Ellipse, GestureShape::Segment { start, current }) => {
+                Annotation::ellipse(*start, *current, gesture.style)
+            }
+            (Tool::Redact, GestureShape::Segment { start, current }) => {
+                Annotation::redact(*start, *current)
+            }
+            (Tool::Pixelate, GestureShape::Segment { start, current }) => {
+                Annotation::pixelate(*start, *current, 12)
+            }
             _ => return Err(anyhow::anyhow!("annotation gesture did not match its tool")),
         };
         annotation.context("could not create annotation")
@@ -571,16 +888,27 @@ impl Editor {
         self.committed_preview.as_ref().unwrap_or(&self.frame)
     }
 
+    fn presentation_frame(&self) -> &Frame {
+        self.manipulation_base
+            .as_ref()
+            .unwrap_or_else(|| self.committed_frame())
+    }
+
     fn refresh_committed_preview(&mut self) -> Result<()> {
-        self.committed_preview = if self.document.is_empty() {
-            None
-        } else {
-            Some(
-                self.document
-                    .flatten(&self.frame)
-                    .context("could not render committed annotations")?,
-            )
-        };
+        if self.document.is_empty() {
+            self.committed_preview = None;
+            return Ok(());
+        }
+
+        // Flattening needs one destination frame and one temporary vector
+        // surface. Release the stale committed frame first so a refresh never
+        // peaks at three region-sized editor buffers.
+        self.committed_preview = None;
+        let preview = self
+            .document
+            .flatten(&self.frame)
+            .context("could not render committed annotations")?;
+        self.committed_preview = Some(preview);
         Ok(())
     }
 
@@ -588,8 +916,274 @@ impl Editor {
         let Some(gesture) = self.gesture.take() else {
             return Ok(false);
         };
-        let annotation = Self::annotation_for_gesture(&gesture)?;
-        self.document.add(annotation);
+        let changed = match &gesture.shape {
+            GestureShape::Object {
+                index,
+                original,
+                current,
+                operation,
+                start,
+                cursor,
+                ..
+            } => match operation {
+                ObjectOperation::Move => {
+                    self.document
+                        .translate(*index, cursor.x() - start.x(), cursor.y() - start.y())
+                }
+                ObjectOperation::Resize(_) => self.document.resize(*index, *original, *current),
+            },
+            GestureShape::Segment { start, current } if gesture.tool == Tool::Callout => {
+                self.text_draft = Some(TextDraft::new(
+                    *current,
+                    Some(*start),
+                    self.color,
+                    self.text_size(),
+                ));
+                false
+            }
+            _ => {
+                let annotation = Self::annotation_for_gesture(&gesture)?;
+                self.document.add(annotation);
+                true
+            }
+        };
+        self.manipulation_base = None;
+        if changed {
+            self.refresh_committed_preview()?;
+        }
+        Ok(changed || self.text_draft.is_some())
+    }
+
+    fn update_gesture(&mut self, point: Point) -> bool {
+        let Some(gesture) = &mut self.gesture else {
+            return false;
+        };
+        match &mut gesture.shape {
+            GestureShape::Object {
+                original,
+                current,
+                operation,
+                start,
+                cursor,
+                preview,
+                ..
+            } => {
+                if *cursor == point {
+                    return false;
+                }
+                let previous_cursor = *cursor;
+                let previous_bounds = *current;
+                *cursor = point;
+                *current = match operation {
+                    ObjectOperation::Move => {
+                        let dx = point.x() - start.x();
+                        let dy = point.y() - start.y();
+                        Bounds::new(
+                            original.left() + dx,
+                            original.top() + dy,
+                            original.right() + dx,
+                            original.bottom() + dy,
+                        )
+                        .expect("translated object bounds are finite")
+                    }
+                    ObjectOperation::Resize(handle) => handle.resize_bounds(*original, point),
+                };
+                match operation {
+                    ObjectOperation::Move => preview.translate(
+                        point.x() - previous_cursor.x(),
+                        point.y() - previous_cursor.y(),
+                    ),
+                    ObjectOperation::Resize(_) => preview.resize(previous_bounds, *current),
+                }
+                true
+            }
+            _ => gesture.update(point),
+        }
+    }
+
+    fn begin_object_transform(&mut self, point: Point) -> Result<bool> {
+        let handle = self.selected.and_then(|index| {
+            self.document
+                .annotation(index)
+                .and_then(|annotation| ResizeHandle::at(annotation.bounds(), point))
+                .map(|handle| (index, handle))
+        });
+        let (index, operation) = if let Some((index, handle)) = handle {
+            (index, ObjectOperation::Resize(handle))
+        } else if let Some(index) = self.document.hit_test(point, HANDLE_HIT_RADIUS) {
+            self.selected = Some(index);
+            (index, ObjectOperation::Move)
+        } else {
+            self.selected = None;
+            return Ok(true);
+        };
+        let original = self
+            .document
+            .annotation(index)
+            .expect("hit object exists")
+            .bounds();
+        let preview = self
+            .document
+            .annotation(index)
+            .expect("hit object exists")
+            .clone();
+        // Drop the full committed cache before producing the exclusion cache,
+        // keeping object drags at two region-sized buffers instead of three.
+        self.committed_preview = None;
+        self.manipulation_base = match self.document.flatten_excluding(&self.frame, index) {
+            Ok(frame) => Some(frame),
+            Err(error) => {
+                self.refresh_committed_preview()?;
+                return Err(error).context("could not prepare object drag preview");
+            }
+        };
+        self.gesture = Some(Gesture {
+            tool: Tool::Select,
+            style: StrokeStyle::default(),
+            shape: GestureShape::Object {
+                index,
+                original,
+                current: original,
+                operation,
+                start: point,
+                cursor: point,
+                preview,
+            },
+        });
+        Ok(true)
+    }
+
+    fn cancel_active_interaction(&mut self) -> Result<bool> {
+        let changed = self.gesture.take().is_some() || self.crop_gesture.take().is_some();
+        if !changed {
+            return Ok(false);
+        }
+        let had_manipulation_cache = self.manipulation_base.take().is_some();
+        if had_manipulation_cache && !self.document.is_empty() {
+            self.refresh_committed_preview()?;
+        }
+        Ok(true)
+    }
+
+    fn object_handle_at(&self, point: PixelPoint) -> Option<ResizeHandle> {
+        let selected = self.selected?;
+        let annotation = self.document.annotation(selected)?;
+        ResizeHandle::at(
+            annotation.bounds(),
+            self.selection.to_annotation_point(point),
+        )
+    }
+
+    fn erase_at(&mut self, point: Point) -> Result<bool> {
+        let Some(index) = self.document.hit_test(point, HANDLE_HIT_RADIUS) else {
+            return Ok(false);
+        };
+        let changed = self.document.delete(index);
+        self.selected = None;
+        if changed {
+            self.refresh_committed_preview()?;
+        }
+        Ok(changed)
+    }
+
+    fn delete_selected(&mut self) -> Result<bool> {
+        let Some(index) = self.selected.take() else {
+            return Ok(false);
+        };
+        let changed = self.document.delete(index);
+        if changed {
+            self.refresh_committed_preview()?;
+        }
+        Ok(changed)
+    }
+
+    fn restyle_selected(&mut self, index: usize) -> Result<bool> {
+        let style = match self.document.annotation(index) {
+            Some(Annotation::Highlighter(_)) => StrokeStyle::new(
+                Color::rgba(self.color.red(), self.color.green(), self.color.blue(), 96),
+                STROKE_WIDTHS[self.width_index] * 3.5,
+            )?,
+            Some(Annotation::Text(_)) => StrokeStyle::new(self.color, self.text_size())?,
+            _ => StrokeStyle::new(self.color, STROKE_WIDTHS[self.width_index])?,
+        };
+        let changed = self.document.restyle(index, style);
+        if changed {
+            self.refresh_committed_preview()?;
+        }
+        Ok(changed)
+    }
+
+    fn commit_text_draft(&mut self) -> Result<bool> {
+        let Some(draft) = self.text_draft.take() else {
+            return Ok(false);
+        };
+        if draft.text.trim().is_empty() {
+            return Ok(false);
+        }
+        self.document.add(Annotation::text(
+            draft.position,
+            draft.text,
+            draft.color,
+            draft.size,
+            draft.callout_anchor,
+        )?);
+        self.refresh_committed_preview()?;
+        Ok(true)
+    }
+
+    fn begin_crop(&mut self, point: PixelPoint) -> bool {
+        let Some(handle) = selection_resize_handle(self.selection, point)
+            .or_else(|| self.selection.contains(point).then_some(ResizeHandle::Move))
+        else {
+            return false;
+        };
+        self.crop_gesture = Some(CropGesture {
+            original: self.selection,
+            preview: self.selection,
+            start: point,
+            handle,
+        });
+        true
+    }
+
+    fn update_crop(&mut self, point: PixelPoint, source_width: u32, source_height: u32) -> bool {
+        let Some(gesture) = &mut self.crop_gesture else {
+            return false;
+        };
+        let preview = gesture.handle.resize_pixel_rect(
+            gesture.original,
+            gesture.start,
+            point,
+            source_width,
+            source_height,
+        );
+        let changed = preview != gesture.preview;
+        gesture.preview = preview;
+        changed
+    }
+
+    fn commit_crop(&mut self, source: &Frame) -> Result<bool> {
+        let Some(gesture) = self.crop_gesture.take() else {
+            return Ok(false);
+        };
+        if gesture.preview == self.selection {
+            return Ok(false);
+        }
+        let origin = source.origin();
+        let rect = PhysicalRect::new(
+            PhysicalPoint::new(
+                origin.x().saturating_add(gesture.preview.x),
+                origin.y().saturating_add(gesture.preview.y),
+            ),
+            gesture.preview.width,
+            gesture.preview.height,
+        )?;
+        let frame = source.crop(rect)?;
+        let dx = (self.selection.x - gesture.preview.x) as f32;
+        let dy = (self.selection.y - gesture.preview.y) as f32;
+        self.document.rebase(dx, dy);
+        self.selection = gesture.preview;
+        self.frame = frame;
         self.refresh_committed_preview()?;
         Ok(true)
     }
@@ -597,6 +1191,7 @@ impl Editor {
     fn undo(&mut self) -> Result<bool> {
         let changed = self.document.undo();
         if changed {
+            self.selected = None;
             self.refresh_committed_preview()?;
         }
         Ok(changed)
@@ -605,6 +1200,7 @@ impl Editor {
     fn redo(&mut self) -> Result<bool> {
         let changed = self.document.redo();
         if changed {
+            self.selected = None;
             self.refresh_committed_preview()?;
         }
         Ok(changed)
@@ -613,12 +1209,14 @@ impl Editor {
     fn clear(&mut self) -> Result<bool> {
         let changed = self.document.clear();
         if changed {
+            self.selected = None;
             self.refresh_committed_preview()?;
         }
         Ok(changed)
     }
 
     fn export_frame(&mut self) -> Result<Frame> {
+        self.commit_text_draft()?;
         self.commit_active_gesture()?;
         // Output can be cancelled or fail, in which case the same editor is
         // shown again. Preserve the cache so retries keep every annotation.
@@ -637,11 +1235,96 @@ impl Editor {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Tool {
+    Select,
     Pen,
     Highlighter,
     Line,
     Arrow,
     Rectangle,
+    Ellipse,
+    Text,
+    Callout,
+    Redact,
+    Pixelate,
+    Eraser,
+    Crop,
+    Eyedropper,
+}
+
+impl Tool {
+    const ALL: [Self; 14] = [
+        Self::Select,
+        Self::Pen,
+        Self::Highlighter,
+        Self::Line,
+        Self::Arrow,
+        Self::Rectangle,
+        Self::Ellipse,
+        Self::Text,
+        Self::Callout,
+        Self::Redact,
+        Self::Pixelate,
+        Self::Eraser,
+        Self::Crop,
+        Self::Eyedropper,
+    ];
+
+    const fn shortcut(self) -> &'static str {
+        match self {
+            Self::Select => "v",
+            Self::Pen => "p",
+            Self::Highlighter => "h",
+            Self::Line => "l",
+            Self::Arrow => "a",
+            Self::Rectangle => "r",
+            Self::Ellipse => "e",
+            Self::Text => "t",
+            Self::Callout => "q",
+            Self::Redact => "b",
+            Self::Pixelate => "m",
+            Self::Eraser => "d",
+            Self::Crop => "g",
+            Self::Eyedropper => "i",
+        }
+    }
+
+    const fn from_preference(tool: EditorTool) -> Self {
+        match tool {
+            EditorTool::Select => Self::Select,
+            EditorTool::Pen => Self::Pen,
+            EditorTool::Highlighter => Self::Highlighter,
+            EditorTool::Line => Self::Line,
+            EditorTool::Arrow => Self::Arrow,
+            EditorTool::Rectangle => Self::Rectangle,
+            EditorTool::Ellipse => Self::Ellipse,
+            EditorTool::Text => Self::Text,
+            EditorTool::Callout => Self::Callout,
+            EditorTool::Redact => Self::Redact,
+            EditorTool::Pixelate => Self::Pixelate,
+            EditorTool::Eraser => Self::Eraser,
+            EditorTool::Crop => Self::Crop,
+            EditorTool::Eyedropper => Self::Eyedropper,
+        }
+    }
+
+    const fn preference(self) -> EditorTool {
+        match self {
+            Self::Select => EditorTool::Select,
+            Self::Pen => EditorTool::Pen,
+            Self::Highlighter => EditorTool::Highlighter,
+            Self::Line => EditorTool::Line,
+            Self::Arrow => EditorTool::Arrow,
+            Self::Rectangle => EditorTool::Rectangle,
+            Self::Ellipse => EditorTool::Ellipse,
+            Self::Text => EditorTool::Text,
+            Self::Callout => EditorTool::Callout,
+            Self::Redact => EditorTool::Redact,
+            Self::Pixelate => EditorTool::Pixelate,
+            Self::Eraser => EditorTool::Eraser,
+            Self::Crop => EditorTool::Crop,
+            Self::Eyedropper => EditorTool::Eyedropper,
+        }
+    }
 }
 
 struct Gesture {
@@ -671,13 +1354,200 @@ impl Gesture {
                 *current = point;
                 changed
             }
+            GestureShape::Object { .. } => false,
         }
     }
 }
 
 enum GestureShape {
     Path(Vec<Point>),
-    Segment { start: Point, current: Point },
+    Segment {
+        start: Point,
+        current: Point,
+    },
+    Object {
+        index: usize,
+        original: Bounds,
+        current: Bounds,
+        operation: ObjectOperation,
+        start: Point,
+        cursor: Point,
+        preview: Annotation,
+    },
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ObjectOperation {
+    Move,
+    Resize(ResizeHandle),
+}
+
+#[derive(Clone, Debug)]
+struct TextDraft {
+    position: Point,
+    callout_anchor: Option<Point>,
+    text: String,
+    color: Color,
+    size: f32,
+}
+
+impl TextDraft {
+    fn new(position: Point, callout_anchor: Option<Point>, color: Color, size: f32) -> Self {
+        Self {
+            position,
+            callout_anchor,
+            text: String::new(),
+            color,
+            size,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CropGesture {
+    original: PixelRect,
+    preview: PixelRect,
+    start: PixelPoint,
+    handle: ResizeHandle,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ResizeHandle {
+    Move,
+    NorthWest,
+    North,
+    NorthEast,
+    East,
+    SouthEast,
+    South,
+    SouthWest,
+    West,
+}
+
+impl ResizeHandle {
+    fn at(bounds: Bounds, point: Point) -> Option<Self> {
+        let centers = [
+            (Self::NorthWest, Point::new(bounds.left(), bounds.top())),
+            (Self::North, Point::new(bounds.center().x(), bounds.top())),
+            (Self::NorthEast, Point::new(bounds.right(), bounds.top())),
+            (Self::East, Point::new(bounds.right(), bounds.center().y())),
+            (Self::SouthEast, Point::new(bounds.right(), bounds.bottom())),
+            (
+                Self::South,
+                Point::new(bounds.center().x(), bounds.bottom()),
+            ),
+            (Self::SouthWest, Point::new(bounds.left(), bounds.bottom())),
+            (Self::West, Point::new(bounds.left(), bounds.center().y())),
+        ];
+        centers.into_iter().find_map(|(handle, center)| {
+            ((center.x() - point.x()).hypot(center.y() - point.y()) <= HANDLE_HIT_RADIUS)
+                .then_some(handle)
+        })
+    }
+
+    fn resize_bounds(self, original: Bounds, point: Point) -> Bounds {
+        let mut left = original.left();
+        let mut top = original.top();
+        let mut right = original.right();
+        let mut bottom = original.bottom();
+        match self {
+            Self::NorthWest => {
+                left = point.x();
+                top = point.y();
+            }
+            Self::North => top = point.y(),
+            Self::NorthEast => {
+                right = point.x();
+                top = point.y();
+            }
+            Self::East => right = point.x(),
+            Self::SouthEast => {
+                right = point.x();
+                bottom = point.y();
+            }
+            Self::South => bottom = point.y(),
+            Self::SouthWest => {
+                left = point.x();
+                bottom = point.y();
+            }
+            Self::West => left = point.x(),
+            Self::Move => {}
+        }
+        if (right - left).abs() < MIN_OBJECT_SIZE {
+            if matches!(self, Self::West | Self::NorthWest | Self::SouthWest) {
+                left = right - MIN_OBJECT_SIZE;
+            } else {
+                right = left + MIN_OBJECT_SIZE;
+            }
+        }
+        if (bottom - top).abs() < MIN_OBJECT_SIZE {
+            if matches!(self, Self::North | Self::NorthWest | Self::NorthEast) {
+                top = bottom - MIN_OBJECT_SIZE;
+            } else {
+                bottom = top + MIN_OBJECT_SIZE;
+            }
+        }
+        Bounds::new(left, top, right, bottom).expect("resized bounds remain finite")
+    }
+
+    fn resize_pixel_rect(
+        self,
+        original: PixelRect,
+        start: PixelPoint,
+        point: PixelPoint,
+        source_width: u32,
+        source_height: u32,
+    ) -> PixelRect {
+        let max_x = i32::try_from(source_width).unwrap_or(i32::MAX);
+        let max_y = i32::try_from(source_height).unwrap_or(i32::MAX);
+        if self == Self::Move {
+            let dx = point.x - start.x;
+            let dy = point.y - start.y;
+            let width = i32::try_from(original.width).unwrap_or(i32::MAX);
+            let height = i32::try_from(original.height).unwrap_or(i32::MAX);
+            return PixelRect {
+                x: original
+                    .x
+                    .saturating_add(dx)
+                    .clamp(0, max_x.saturating_sub(width)),
+                y: original
+                    .y
+                    .saturating_add(dy)
+                    .clamp(0, max_y.saturating_sub(height)),
+                ..original
+            };
+        }
+        let bounds = self.resize_bounds(
+            pixel_rect_bounds(original),
+            Point::new(
+                point.x.clamp(0, max_x) as f32,
+                point.y.clamp(0, max_y) as f32,
+            ),
+        );
+        let left = bounds.left().round().clamp(0.0, max_x as f32) as i32;
+        let top = bounds.top().round().clamp(0.0, max_y as f32) as i32;
+        let right = bounds.right().round().clamp(0.0, max_x as f32) as i32;
+        let bottom = bounds.bottom().round().clamp(0.0, max_y as f32) as i32;
+        let minimum = i32::try_from(MIN_SELECTION_SIZE).unwrap_or(3);
+        let mut x = left.min(right).clamp(0, max_x.saturating_sub(minimum));
+        let mut y = top.min(bottom).clamp(0, max_y.saturating_sub(minimum));
+        let mut rect_right = left.max(right).clamp(x + minimum, max_x);
+        let mut rect_bottom = top.max(bottom).clamp(y + minimum, max_y);
+        if rect_right - x < minimum {
+            x = rect_right.saturating_sub(minimum).max(0);
+            rect_right = (x + minimum).min(max_x);
+        }
+        if rect_bottom - y < minimum {
+            y = rect_bottom.saturating_sub(minimum).max(0);
+            rect_bottom = (y + minimum).min(max_y);
+        }
+        PixelRect {
+            x,
+            y,
+            width: u32::try_from(rect_right - x).unwrap_or(MIN_SELECTION_SIZE),
+            height: u32::try_from(rect_bottom - y).unwrap_or(MIN_SELECTION_SIZE),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -689,11 +1559,20 @@ enum ExportKind {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ToolbarButton {
+    Select,
     Pen,
     Highlighter,
     Line,
     Arrow,
     Rectangle,
+    Ellipse,
+    Text,
+    Callout,
+    Redact,
+    Pixelate,
+    Eraser,
+    Crop,
+    Eyedropper,
     Undo,
     Redo,
     Color,
@@ -705,11 +1584,20 @@ enum ToolbarButton {
 
 impl ToolbarButton {
     const ALL: [Self; TOOLBAR_BUTTONS] = [
+        Self::Select,
         Self::Pen,
         Self::Highlighter,
         Self::Line,
         Self::Arrow,
         Self::Rectangle,
+        Self::Ellipse,
+        Self::Text,
+        Self::Callout,
+        Self::Redact,
+        Self::Pixelate,
+        Self::Eraser,
+        Self::Crop,
+        Self::Eyedropper,
         Self::Undo,
         Self::Redo,
         Self::Color,
@@ -721,12 +1609,47 @@ impl ToolbarButton {
 
     const fn tool(self) -> Option<Tool> {
         match self {
+            Self::Select => Some(Tool::Select),
             Self::Pen => Some(Tool::Pen),
             Self::Highlighter => Some(Tool::Highlighter),
             Self::Line => Some(Tool::Line),
             Self::Arrow => Some(Tool::Arrow),
             Self::Rectangle => Some(Tool::Rectangle),
+            Self::Ellipse => Some(Tool::Ellipse),
+            Self::Text => Some(Tool::Text),
+            Self::Callout => Some(Tool::Callout),
+            Self::Redact => Some(Tool::Redact),
+            Self::Pixelate => Some(Tool::Pixelate),
+            Self::Eraser => Some(Tool::Eraser),
+            Self::Crop => Some(Tool::Crop),
+            Self::Eyedropper => Some(Tool::Eyedropper),
             _ => None,
+        }
+    }
+
+    const fn tooltip(self) -> &'static str {
+        match self {
+            Self::Select => "Select/move/resize (V)",
+            Self::Pen => "Pen (P)",
+            Self::Highlighter => "Highlighter (H)",
+            Self::Line => "Line (L)",
+            Self::Arrow => "Arrow (A)",
+            Self::Rectangle => "Rectangle (R)",
+            Self::Ellipse => "Ellipse (E)",
+            Self::Text => "Text box (T)",
+            Self::Callout => "Callout (Q)",
+            Self::Redact => "Secure redact (B)",
+            Self::Pixelate => "Pixelate (M)",
+            Self::Eraser => "Delete object (D)",
+            Self::Crop => "Crop/resize selection (G)",
+            Self::Eyedropper => "Eyedropper (I)",
+            Self::Undo => "Undo (Ctrl+Z)",
+            Self::Redo => "Redo (Ctrl+Y)",
+            Self::Color => "Color: click cycles, right-click custom (K)",
+            Self::Width => "Stroke width / text size",
+            Self::Save => "Save As (S)",
+            Self::Copy => "Copy (C or Enter)",
+            Self::Print => "Print (O)",
         }
     }
 }
@@ -736,6 +1659,8 @@ struct ToolbarLayout {
     x: i32,
     y: i32,
     button_size: i32,
+    columns: i32,
+    rows: i32,
 }
 
 impl ToolbarLayout {
@@ -751,41 +1676,52 @@ impl ToolbarLayout {
         let gap = scaled_ui_size(TOOLBAR_GAP, scale_factor);
         let default_button_size = scaled_ui_size(DEFAULT_BUTTON_SIZE, scale_factor);
         let minimum_button_size = scaled_ui_size(MIN_BUTTON_SIZE, scale_factor);
-        let button_count = i32::try_from(TOOLBAR_BUTTONS).unwrap_or(1);
+        let columns = i32::try_from(TOOLBAR_COLUMNS.min(TOOLBAR_BUTTONS)).unwrap_or(1);
+        let rows = i32::try_from(TOOLBAR_BUTTONS.div_ceil(TOOLBAR_COLUMNS)).unwrap_or(1);
         let available = (screen_width - padding * 2).max(1);
-        let maximum_fitting_button = (available / button_count).max(1);
+        let maximum_fitting_button = (available / columns).max(1);
         let button_size = if maximum_fitting_button >= minimum_button_size {
             default_button_size.min(maximum_fitting_button)
         } else {
             maximum_fitting_button
         };
-        let toolbar_width = button_size * i32::try_from(TOOLBAR_BUTTONS).unwrap_or_default();
+        let toolbar_width = button_size * columns;
+        let toolbar_height = button_size * rows;
         let maximum_x = (screen_width - toolbar_width - padding).max(0);
         let minimum_x = padding.min(maximum_x);
         let x = selection.x.clamp(minimum_x, maximum_x);
 
         let below = selection.bottom() + gap;
-        let above = selection.y - gap - button_size;
-        let y = if below + button_size + padding <= screen_height {
+        let above = selection.y - gap - toolbar_height;
+        let y = if below + toolbar_height + padding <= screen_height {
             below
         } else if above >= padding {
             above
         } else {
-            (screen_height - button_size - padding).max(0)
+            (screen_height - toolbar_height - padding).max(0)
         };
-        Self { x, y, button_size }
+        Self {
+            x,
+            y,
+            button_size,
+            columns,
+            rows,
+        }
     }
 
     fn button_at(self, point: PixelPoint) -> Option<ToolbarButton> {
-        let width = self.button_size * i32::try_from(TOOLBAR_BUTTONS).unwrap_or_default();
+        let width = self.button_size * self.columns;
+        let height = self.button_size * self.rows;
         if point.x < self.x
             || point.y < self.y
             || point.x >= self.x + width
-            || point.y >= self.y + self.button_size
+            || point.y >= self.y + height
         {
             return None;
         }
-        let index = usize::try_from((point.x - self.x) / self.button_size).ok()?;
+        let column = (point.x - self.x) / self.button_size;
+        let row = (point.y - self.y) / self.button_size;
+        let index = usize::try_from(row * self.columns + column).ok()?;
         ToolbarButton::ALL.get(index).copied()
     }
 }
@@ -886,6 +1822,23 @@ impl PixelRect {
         let y = point.y.clamp(self.y, self.bottom().saturating_sub(1));
         self.to_annotation_point(PixelPoint { x, y })
     }
+}
+
+fn pixel_rect_bounds(rect: PixelRect) -> Bounds {
+    Bounds::new(
+        rect.x as f32,
+        rect.y as f32,
+        rect.right() as f32,
+        rect.bottom() as f32,
+    )
+    .expect("pixel rectangle bounds are finite")
+}
+
+fn selection_resize_handle(selection: PixelRect, point: PixelPoint) -> Option<ResizeHandle> {
+    ResizeHandle::at(
+        pixel_rect_bounds(selection),
+        Point::new(point.x as f32, point.y as f32),
+    )
 }
 
 fn character_is(key: &Key, expected: &str) -> bool {
@@ -989,7 +1942,8 @@ fn draw_toolbar(
     editor: &Editor,
     layout: ToolbarLayout,
 ) {
-    let toolbar_width = layout.button_size * i32::try_from(TOOLBAR_BUTTONS).unwrap_or_default();
+    let toolbar_width = layout.button_size * layout.columns;
+    let toolbar_height = layout.button_size * layout.rows;
     fill_rect(
         buffer,
         width,
@@ -997,12 +1951,14 @@ fn draw_toolbar(
         layout.x - TOOLBAR_PADDING,
         layout.y - TOOLBAR_PADDING,
         toolbar_width + TOOLBAR_PADDING * 2,
-        layout.button_size + TOOLBAR_PADDING * 2,
+        toolbar_height + TOOLBAR_PADDING * 2,
         0x00_171a22,
     );
 
     for (index, button) in ToolbarButton::ALL.iter().copied().enumerate() {
-        let x = layout.x + i32::try_from(index).unwrap_or_default() * layout.button_size;
+        let index = i32::try_from(index).unwrap_or_default();
+        let x = layout.x + (index % layout.columns) * layout.button_size;
+        let y = layout.y + (index / layout.columns) * layout.button_size;
         let selected = button.tool().is_some_and(|tool| tool == editor.tool);
         let background = if selected { 0x00_2d74da } else { 0x00_242833 };
         fill_rect(
@@ -1010,7 +1966,7 @@ fn draw_toolbar(
             width,
             height,
             x + 1,
-            layout.y + 1,
+            y + 1,
             layout.button_size - 2,
             layout.button_size - 2,
             background,
@@ -1021,7 +1977,7 @@ fn draw_toolbar(
             height,
             button,
             x,
-            layout.y,
+            y,
             layout.button_size,
             editor,
         );
@@ -1044,85 +2000,11 @@ fn draw_toolbar_icon(
     let inset = (size / 4).max(5);
     let left = x + inset;
     let right = x + size - inset;
-    let top = y + inset;
-    let bottom = y + size - inset;
     let white = 0x00ffffff;
 
     match button {
-        ToolbarButton::Pen => {
-            draw_line(buffer, width, height, left, bottom, right, top, white, 3);
-            draw_line(
-                buffer,
-                width,
-                height,
-                left,
-                bottom,
-                left + 5,
-                bottom - 1,
-                white,
-                2,
-            );
-        }
-        ToolbarButton::Highlighter => {
-            draw_line(
-                buffer,
-                width,
-                height,
-                left,
-                bottom - 2,
-                right,
-                top + 2,
-                0x00ffe35a,
-                6,
-            );
-        }
-        ToolbarButton::Line => {
-            draw_line(buffer, width, height, left, bottom, right, top, white, 2);
-        }
-        ToolbarButton::Arrow => {
-            draw_line(buffer, width, height, left, bottom, right, top, white, 2);
-            draw_line(buffer, width, height, right, top, right - 7, top, white, 2);
-            draw_line(buffer, width, height, right, top, right, top + 7, white, 2);
-        }
-        ToolbarButton::Rectangle => {
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left,
-                top,
-                right - left,
-                bottom - top,
-                white,
-                2,
-            );
-        }
-        ToolbarButton::Undo => {
-            draw_text(
-                buffer,
-                width,
-                height,
-                center_x - 4,
-                center_y - 4,
-                "U",
-                white,
-                1,
-            );
-        }
-        ToolbarButton::Redo => {
-            draw_text(
-                buffer,
-                width,
-                height,
-                center_x - 4,
-                center_y - 4,
-                "Y",
-                white,
-                1,
-            );
-        }
         ToolbarButton::Color => {
-            let color = PALETTE[editor.color_index];
+            let color = editor.color;
             let value = (u32::from(color.red()) << 16)
                 | (u32::from(color.green()) << 8)
                 | u32::from(color.blue());
@@ -1156,90 +2038,235 @@ fn draw_toolbar_icon(
                 buffer, width, height, left, center_y, right, center_y, white, thickness,
             );
         }
-        ToolbarButton::Save => {
-            draw_rect(
+        _ => {
+            let label = match button {
+                ToolbarButton::Select => "V",
+                ToolbarButton::Pen => "P",
+                ToolbarButton::Highlighter => "H",
+                ToolbarButton::Line => "L",
+                ToolbarButton::Arrow => "A",
+                ToolbarButton::Rectangle => "R",
+                ToolbarButton::Ellipse => "E",
+                ToolbarButton::Text => "T",
+                ToolbarButton::Callout => "Q",
+                ToolbarButton::Redact => "B",
+                ToolbarButton::Pixelate => "M",
+                ToolbarButton::Eraser => "D",
+                ToolbarButton::Crop => "G",
+                ToolbarButton::Eyedropper => "I",
+                ToolbarButton::Undo => "U",
+                ToolbarButton::Redo => "Y",
+                ToolbarButton::Save => "S",
+                ToolbarButton::Copy => "C",
+                ToolbarButton::Print => "O",
+                ToolbarButton::Color | ToolbarButton::Width => unreachable!(),
+            };
+            let font_size = (size as f32 * 0.43).clamp(11.0, 18.0);
+            let (label_width, label_height) = measure_text(label, font_size);
+            draw_text_bgrx(
                 buffer,
                 width,
                 height,
-                left,
-                top,
-                right - left,
-                bottom - top,
-                white,
-                2,
-            );
-            fill_rect(buffer, width, height, center_x - 5, top, 10, 7, white);
-            draw_rect(
-                buffer,
-                width,
-                height,
-                center_x - 6,
-                center_y + 2,
-                12,
-                7,
-                white,
-                1,
-            );
-        }
-        ToolbarButton::Copy => {
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left + 4,
-                top,
-                right - left - 4,
-                bottom - top - 4,
-                white,
-                1,
-            );
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left,
-                top + 4,
-                right - left - 4,
-                bottom - top - 4,
-                white,
-                2,
-            );
-        }
-        ToolbarButton::Print => {
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left + 4,
-                top,
-                right - left - 8,
-                7,
-                white,
-                1,
-            );
-            fill_rect(
-                buffer,
-                width,
-                height,
-                left,
-                center_y - 4,
-                right - left,
-                10,
-                white,
-            );
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left + 4,
-                center_y + 2,
-                right - left - 8,
-                8,
-                0x00_171a22,
-                1,
+                Point::new(
+                    (center_x - i32::try_from(label_width).unwrap_or_default() / 2) as f32,
+                    (center_y - i32::try_from(label_height).unwrap_or_default() / 2) as f32,
+                ),
+                label,
+                Color::WHITE,
+                font_size,
             );
         }
     }
+}
+
+fn draw_shortcut_hints(buffer: &mut [u32], width: u32, height: u32) {
+    let text = "V Select  P Pen  T Text  B Redact  G Crop  K Color  Enter Copy  S Save  Esc Cancel";
+    let size = 13.0;
+    let (text_width, text_height) = measure_text(text, size);
+    let x = 10;
+    let y = i32::try_from(height.saturating_sub(text_height + 16)).unwrap_or_default();
+    fill_rect(
+        buffer,
+        width,
+        height,
+        x - 5,
+        y - 5,
+        i32::try_from(text_width + 10).unwrap_or(i32::MAX),
+        i32::try_from(text_height + 10).unwrap_or(i32::MAX),
+        0x00_171a22,
+    );
+    draw_text_bgrx(
+        buffer,
+        width,
+        height,
+        Point::new(x as f32, y as f32),
+        text,
+        Color::WHITE,
+        size,
+    );
+}
+
+fn draw_tooltip(buffer: &mut [u32], width: u32, height: u32, layout: ToolbarLayout, text: &str) {
+    let size = 13.0;
+    let (text_width, text_height) = measure_text(text, size);
+    let box_width = i32::try_from(text_width + 14).unwrap_or(i32::MAX);
+    let box_height = i32::try_from(text_height + 10).unwrap_or(i32::MAX);
+    let mut x = layout.x;
+    let mut y = layout.y - box_height - 6;
+    if y < 0 {
+        y = layout.y + layout.button_size * layout.rows + 6;
+    }
+    x = x.clamp(
+        0,
+        i32::try_from(width)
+            .unwrap_or(i32::MAX)
+            .saturating_sub(box_width),
+    );
+    fill_rect(
+        buffer,
+        width,
+        height,
+        x,
+        y,
+        box_width,
+        box_height,
+        0x00_111319,
+    );
+    draw_rect(
+        buffer,
+        width,
+        height,
+        x,
+        y,
+        box_width,
+        box_height,
+        0x00_5d6578,
+        1,
+    );
+    draw_text_bgrx(
+        buffer,
+        width,
+        height,
+        Point::new((x + 7) as f32, (y + 5) as f32),
+        text,
+        Color::WHITE,
+        size,
+    );
+}
+
+fn draw_text_draft(
+    buffer: &mut [u32],
+    width: u32,
+    height: u32,
+    selection: PixelRect,
+    draft: &TextDraft,
+) {
+    let content = if draft.text.is_empty() {
+        "Type text..."
+    } else {
+        &draft.text
+    };
+    let (text_width, text_height) = measure_text(content, draft.size);
+    let (x, y) = annotation_pixel(selection, draft.position);
+    fill_rect(
+        buffer,
+        width,
+        height,
+        x - 5,
+        y - 5,
+        i32::try_from(text_width + 10).unwrap_or(i32::MAX),
+        i32::try_from(text_height + 10).unwrap_or(i32::MAX),
+        0x00_171a22,
+    );
+    if let Some(anchor) = draft.callout_anchor {
+        let (anchor_x, anchor_y) = annotation_pixel(selection, anchor);
+        draw_preview_line(
+            buffer,
+            width,
+            height,
+            anchor_x,
+            anchor_y,
+            x,
+            y,
+            draft.color,
+            3,
+        );
+    }
+    draw_text_bgrx(
+        buffer,
+        width,
+        height,
+        Point::new(x as f32, y as f32),
+        content,
+        draft.color,
+        draft.size,
+    );
+}
+
+fn draw_resize_handles(buffer: &mut [u32], width: u32, height: u32, bounds: Bounds) {
+    let center = bounds.center();
+    for point in [
+        Point::new(bounds.left(), bounds.top()),
+        Point::new(center.x(), bounds.top()),
+        Point::new(bounds.right(), bounds.top()),
+        Point::new(bounds.right(), center.y()),
+        Point::new(bounds.right(), bounds.bottom()),
+        Point::new(center.x(), bounds.bottom()),
+        Point::new(bounds.left(), bounds.bottom()),
+        Point::new(bounds.left(), center.y()),
+    ] {
+        let x = point.x().round() as i32;
+        let y = point.y().round() as i32;
+        fill_rect(
+            buffer,
+            width,
+            height,
+            x - HANDLE_RADIUS,
+            y - HANDLE_RADIUS,
+            HANDLE_RADIUS * 2 + 1,
+            HANDLE_RADIUS * 2 + 1,
+            0x00_ffffff,
+        );
+        draw_rect(
+            buffer,
+            width,
+            height,
+            x - HANDLE_RADIUS,
+            y - HANDLE_RADIUS,
+            HANDLE_RADIUS * 2,
+            HANDLE_RADIUS * 2,
+            0x00_2d74da,
+            1,
+        );
+    }
+}
+
+fn draw_object_selection(
+    buffer: &mut [u32],
+    width: u32,
+    height: u32,
+    selection: PixelRect,
+    local: Bounds,
+) {
+    let bounds = Bounds::new(
+        local.left() + selection.x as f32,
+        local.top() + selection.y as f32,
+        local.right() + selection.x as f32,
+        local.bottom() + selection.y as f32,
+    )
+    .expect("screen object bounds are finite");
+    draw_rect(
+        buffer,
+        width,
+        height,
+        bounds.left().round() as i32,
+        bounds.top().round() as i32,
+        bounds.width().round() as i32,
+        bounds.height().round() as i32,
+        0x00_61a0ff,
+        1,
+    );
+    draw_resize_handles(buffer, width, height, bounds);
 }
 
 fn draw_gesture_preview(
@@ -1290,8 +2317,295 @@ fn draw_gesture_preview(
                     draw_preview_line(buffer, width, height, x1, y1, x0, y1, color, thickness);
                     draw_preview_line(buffer, width, height, x0, y1, x0, y0, color, thickness);
                 }
-                Tool::Pen | Tool::Highlighter => {}
+                Tool::Ellipse => {
+                    draw_ellipse_preview(buffer, width, height, x0, y0, x1, y1, color, thickness)
+                }
+                Tool::Redact => fill_rect(
+                    buffer,
+                    width,
+                    height,
+                    x0.min(x1),
+                    y0.min(y1),
+                    (x1 - x0).abs(),
+                    (y1 - y0).abs(),
+                    0,
+                ),
+                Tool::Pixelate => pixelate_buffer_region(
+                    buffer,
+                    width,
+                    height,
+                    x0.min(x1),
+                    y0.min(y1),
+                    x0.max(x1),
+                    y0.max(y1),
+                    12,
+                ),
+                Tool::Callout => {
+                    draw_preview_line(buffer, width, height, x0, y0, x1, y1, color, 3);
+                    draw_preview_arrow_head(
+                        buffer,
+                        width,
+                        height,
+                        selection,
+                        *start,
+                        *current,
+                        gesture.style,
+                    );
+                }
+                Tool::Select
+                | Tool::Pen
+                | Tool::Highlighter
+                | Tool::Text
+                | Tool::Eraser
+                | Tool::Crop
+                | Tool::Eyedropper => {}
             }
+        }
+        GestureShape::Object { preview, .. } => {
+            draw_annotation_preview(buffer, width, height, selection, preview);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_ellipse_preview(
+    buffer: &mut [u32],
+    width: u32,
+    height: u32,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    color: Color,
+    thickness: i32,
+) {
+    let center_x = (x0 + x1) as f32 * 0.5;
+    let center_y = (y0 + y1) as f32 * 0.5;
+    let radius_x = (x1 - x0).abs() as f32 * 0.5;
+    let radius_y = (y1 - y0).abs() as f32 * 0.5;
+    let mut previous = (
+        (center_x + radius_x).round() as i32,
+        center_y.round() as i32,
+    );
+    for step in 1..=48 {
+        let angle = step as f32 / 48.0 * std::f32::consts::TAU;
+        let current = (
+            (center_x + radius_x * angle.cos()).round() as i32,
+            (center_y + radius_y * angle.sin()).round() as i32,
+        );
+        draw_preview_line(
+            buffer, width, height, previous.0, previous.1, current.0, current.1, color, thickness,
+        );
+        previous = current;
+    }
+}
+
+fn draw_annotation_preview(
+    buffer: &mut [u32],
+    width: u32,
+    height: u32,
+    selection: PixelRect,
+    annotation: &Annotation,
+) {
+    match annotation {
+        Annotation::Pen(stroke) | Annotation::Highlighter(stroke) => {
+            let style = stroke.style();
+            let thickness = style.width().round().max(1.0) as i32;
+            for segment in stroke.points().windows(2) {
+                let (x0, y0) = annotation_pixel(selection, segment[0]);
+                let (x1, y1) = annotation_pixel(selection, segment[1]);
+                draw_preview_line(
+                    buffer,
+                    width,
+                    height,
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    style.color(),
+                    thickness,
+                );
+            }
+        }
+        Annotation::Line(segment) | Annotation::Arrow(segment) => {
+            let (x0, y0) = annotation_pixel(selection, segment.start());
+            let (x1, y1) = annotation_pixel(selection, segment.end());
+            let style = segment.style();
+            let thickness = style.width().round().max(1.0) as i32;
+            draw_preview_line(
+                buffer,
+                width,
+                height,
+                x0,
+                y0,
+                x1,
+                y1,
+                style.color(),
+                thickness,
+            );
+            if matches!(annotation, Annotation::Arrow(_)) {
+                draw_preview_arrow_head(
+                    buffer,
+                    width,
+                    height,
+                    selection,
+                    segment.start(),
+                    segment.end(),
+                    style,
+                );
+            }
+        }
+        Annotation::Rectangle(rectangle) | Annotation::Ellipse(rectangle) => {
+            let (x0, y0) = annotation_pixel(selection, rectangle.first_corner());
+            let (x1, y1) = annotation_pixel(selection, rectangle.opposite_corner());
+            let style = rectangle.style();
+            let thickness = style.width().round().max(1.0) as i32;
+            if matches!(annotation, Annotation::Ellipse(_)) {
+                draw_ellipse_preview(
+                    buffer,
+                    width,
+                    height,
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    style.color(),
+                    thickness,
+                );
+            } else {
+                draw_rect(
+                    buffer,
+                    width,
+                    height,
+                    x0.min(x1),
+                    y0.min(y1),
+                    (x1 - x0).abs(),
+                    (y1 - y0).abs(),
+                    (u32::from(style.color().red()) << 16)
+                        | (u32::from(style.color().green()) << 8)
+                        | u32::from(style.color().blue()),
+                    thickness,
+                );
+            }
+        }
+        Annotation::Text(text) => {
+            let (x, y) = annotation_pixel(selection, text.position());
+            let (text_width, text_height) = measure_text(text.text(), text.size());
+            fill_rect(
+                buffer,
+                width,
+                height,
+                x - 5,
+                y - 5,
+                i32::try_from(text_width + 10).unwrap_or(i32::MAX),
+                i32::try_from(text_height + 10).unwrap_or(i32::MAX),
+                0x00_171a22,
+            );
+            if let Some(anchor) = text.callout_anchor() {
+                let (anchor_x, anchor_y) = annotation_pixel(selection, anchor);
+                draw_preview_line(
+                    buffer,
+                    width,
+                    height,
+                    anchor_x,
+                    anchor_y,
+                    x,
+                    y,
+                    text.color(),
+                    3,
+                );
+            }
+            draw_text_bgrx(
+                buffer,
+                width,
+                height,
+                Point::new(x as f32, y as f32),
+                text.text(),
+                text.color(),
+                text.size(),
+            );
+        }
+        Annotation::Redact(effect) => {
+            let (x0, y0) = annotation_pixel(selection, effect.first_corner());
+            let (x1, y1) = annotation_pixel(selection, effect.opposite_corner());
+            fill_rect(
+                buffer,
+                width,
+                height,
+                x0.min(x1),
+                y0.min(y1),
+                (x1 - x0).abs(),
+                (y1 - y0).abs(),
+                0,
+            );
+        }
+        Annotation::Pixelate(effect) => {
+            let (x0, y0) = annotation_pixel(selection, effect.first_corner());
+            let (x1, y1) = annotation_pixel(selection, effect.opposite_corner());
+            pixelate_buffer_region(
+                buffer,
+                width,
+                height,
+                x0.min(x1),
+                y0.min(y1),
+                x0.max(x1),
+                y0.max(y1),
+                i32::from(effect.block_size()),
+            );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn pixelate_buffer_region(
+    buffer: &mut [u32],
+    width: u32,
+    height: u32,
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+    block: i32,
+) {
+    let left = left.max(0);
+    let top = top.max(0);
+    let right = right.min(i32::try_from(width).unwrap_or(i32::MAX));
+    let bottom = bottom.min(i32::try_from(height).unwrap_or(i32::MAX));
+    let block = block.max(2);
+    let stride = usize::try_from(width).unwrap_or_default();
+    for block_y in (top..bottom).step_by(block as usize) {
+        for block_x in (left..right).step_by(block as usize) {
+            let end_y = (block_y + block).min(bottom);
+            let end_x = (block_x + block).min(right);
+            let mut red = 0_u64;
+            let mut green = 0_u64;
+            let mut blue = 0_u64;
+            let mut count = 0_u64;
+            for y in block_y..end_y {
+                for x in block_x..end_x {
+                    let pixel = buffer[y as usize * stride + x as usize];
+                    red += u64::from((pixel >> 16) & 0xff);
+                    green += u64::from((pixel >> 8) & 0xff);
+                    blue += u64::from(pixel & 0xff);
+                    count += 1;
+                }
+            }
+            if count == 0 {
+                continue;
+            }
+            let color = (((red / count) as u32) << 16)
+                | (((green / count) as u32) << 8)
+                | (blue / count) as u32;
+            fill_rect(
+                buffer,
+                width,
+                height,
+                block_x,
+                block_y,
+                end_x - block_x,
+                end_y - block_y,
+                color,
+            );
         }
     }
 }
@@ -1631,9 +2945,13 @@ mod tests {
             frame,
             document: AnnotationDocument::new(),
             tool: Tool::Pen,
-            color_index: 0,
+            color: PALETTE[0],
             width_index: 1,
             gesture: None,
+            crop_gesture: None,
+            text_draft: None,
+            selected: None,
+            manipulation_base: None,
             committed_preview: None,
         }
     }
@@ -1765,7 +3083,7 @@ mod tests {
 
         // A keyboard tool change during the drag must not reinterpret its shape.
         editor.tool = Tool::Rectangle;
-        editor.color_index = 5;
+        editor.color = PALETTE[5];
         editor.width_index = 3;
 
         let exported = editor.export_frame().expect("active gesture exports");
@@ -1824,5 +3142,85 @@ mod tests {
 
         assert_eq!(normal.button_size, DEFAULT_BUTTON_SIZE);
         assert_eq!(high_density.button_size, DEFAULT_BUTTON_SIZE * 2);
+    }
+
+    #[test]
+    fn extended_shape_gestures_create_the_requested_annotation_types() {
+        for (tool, expected) in [
+            (Tool::Ellipse, "ellipse"),
+            (Tool::Redact, "redact"),
+            (Tool::Pixelate, "pixelate"),
+        ] {
+            let gesture = line_gesture(tool, StrokeStyle::default());
+            let annotation = Editor::annotation_for_gesture(&gesture).expect("valid gesture");
+            assert!(matches!(
+                (expected, annotation),
+                ("ellipse", Annotation::Ellipse(_))
+                    | ("redact", Annotation::Redact(_))
+                    | ("pixelate", Annotation::Pixelate(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn text_draft_commits_as_an_editable_object() {
+        let mut editor = test_editor();
+        editor.text_draft = Some(TextDraft {
+            position: Point::new(1.0, 1.0),
+            callout_anchor: Some(Point::new(0.0, 0.0)),
+            text: "Fast".to_owned(),
+            color: Color::WHITE,
+            size: 14.0,
+        });
+
+        assert!(editor.commit_text_draft().expect("text should commit"));
+        assert!(matches!(
+            editor.document.annotations(),
+            [Annotation::Text(_)]
+        ));
+        assert!(editor.text_draft.is_none());
+    }
+
+    #[test]
+    fn crop_resize_is_clamped_inside_the_source() {
+        let original = PixelRect {
+            x: 0,
+            y: 0,
+            width: 8,
+            height: 8,
+        };
+        let resized = ResizeHandle::SouthEast.resize_pixel_rect(
+            original,
+            PixelPoint { x: 8, y: 8 },
+            PixelPoint { x: 99, y: 99 },
+            8,
+            8,
+        );
+        assert!(resized.right() <= 8);
+        assert!(resized.bottom() <= 8);
+        assert!(resized.width >= MIN_SELECTION_SIZE);
+        assert!(resized.height >= MIN_SELECTION_SIZE);
+    }
+
+    #[test]
+    fn object_drag_replaces_the_committed_cache_instead_of_adding_a_third_frame() {
+        let mut editor = test_editor();
+        let gesture = line_gesture(Tool::Line, StrokeStyle::default());
+        let annotation = Editor::annotation_for_gesture(&gesture).expect("line annotation");
+        editor.document.add(annotation);
+        editor
+            .refresh_committed_preview()
+            .expect("preview should render");
+        editor.tool = Tool::Select;
+
+        assert!(editor
+            .begin_object_transform(Point::new(3.0, 3.0))
+            .expect("drag preview should initialize"));
+        assert!(editor.committed_preview.is_none());
+        assert!(editor.manipulation_base.is_some());
+        assert!(editor.update_gesture(Point::new(4.0, 4.0)));
+        assert!(editor.commit_active_gesture().expect("drag should commit"));
+        assert!(editor.manipulation_base.is_none());
+        assert!(editor.committed_preview.is_some());
     }
 }

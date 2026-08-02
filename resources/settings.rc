@@ -32,8 +32,10 @@
 #define IDC_JPEG_QUALITY_LABEL   1012
 #define IDC_PNG_COMPRESSION_LABEL 1013
 #define IDC_PNG_HELP             1014
+#define IDC_REGION_AUTO_COPY     1015
+#define IDC_REGION_AUTOSAVE      1016
 
-IDD_SETTINGS DIALOGEX 0, 0, 430, 298
+IDD_SETTINGS DIALOGEX 0, 0, 430, 335
 STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
 EXSTYLE WS_EX_APPWINDOW
 CAPTION "Rustshot Settings"
@@ -44,7 +46,7 @@ BEGIN
     EDITTEXT        IDC_FULLSCREEN_SHORTCUT, 126, 21, 282, 14, ES_AUTOHSCROLL | ES_READONLY | WS_TABSTOP
     LTEXT           "&Region selection:", -1, 18, 48, 102, 10
     EDITTEXT        IDC_REGION_SHORTCUT, 126, 45, 282, 14, ES_AUTOHSCROLL | ES_READONLY | WS_TABSTOP
-    LTEXT           "Select a field, hold the keys together, then release. Tab moves between controls.", -1, 126, 66, 282, 10
+    LTEXT           "Hold a chord such as Ctrl+Shift+Backspace, then release. Tab moves between controls.", -1, 126, 66, 282, 10
 
     GROUPBOX        "Saving and image quality", -1, 8, 90, 414, 113
     LTEXT           "Autosave &folder:", -1, 18, 108, 102, 10
@@ -58,13 +60,16 @@ BEGIN
     COMBOBOX        IDC_PNG_COMPRESSION, 126, 155, 104, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     LTEXT           "PNG is lossless; compression changes encoding speed and file size.", IDC_PNG_HELP, 126, 181, 282, 10
 
-    GROUPBOX        "Capture", -1, 8, 209, 414, 51
+    GROUPBOX        "Capture", -1, 8, 209, 414, 88
     LTEXT           "Full-screen sc&ope:", -1, 18, 228, 102, 10
     COMBOBOX        IDC_MONITOR_SCOPE, 126, 225, 143, 70, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
     CONTROL         "Include mouse c&ursor", IDC_INCLUDE_CURSOR, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 285, 226, 123, 12
+    CONTROL         "Automatically &copy selected region", IDC_REGION_AUTO_COPY, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 18, 252, 190, 12
+    CONTROL         "Automatically &save selected region", IDC_REGION_AUTOSAVE, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 218, 252, 190, 12
+    LTEXT           "Either automatic action finishes immediately after selection and skips the editor.", -1, 18, 277, 390, 10
 
-    PUSHBUTTON      "Restore &defaults", IDC_RESTORE_DEFAULTS, 8, 272, 82, 18, WS_TABSTOP
-    LTEXT           "", IDC_SETTINGS_STATUS, 99, 276, 188, 10
-    DEFPUSHBUTTON   "&Save", IDOK, 297, 272, 58, 18, WS_TABSTOP
-    PUSHBUTTON      "&Cancel", IDCANCEL, 364, 272, 58, 18, WS_TABSTOP
+    PUSHBUTTON      "Restore &defaults", IDC_RESTORE_DEFAULTS, 8, 309, 82, 18, WS_TABSTOP
+    LTEXT           "", IDC_SETTINGS_STATUS, 99, 313, 188, 10
+    DEFPUSHBUTTON   "&Save", IDOK, 297, 309, 58, 18, WS_TABSTOP
+    PUSHBUTTON      "&Cancel", IDCANCEL, 364, 309, 58, 18, WS_TABSTOP
 END

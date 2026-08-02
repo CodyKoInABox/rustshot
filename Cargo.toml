@@ -13,6 +13,7 @@ categories = ["multimedia::images", "gui"]
 anyhow = "1.0"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 directories = "6.0"
+fontdue = "0.9"
 global-hotkey = "0.8"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 rfd = "0.17"

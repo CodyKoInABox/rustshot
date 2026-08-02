@@ -7,52 +7,73 @@ cannot be validated reliably by headless CI.
 ## Startup and configuration
 
 - Start `rustshot.exe`; verify there is one tray icon and no console or taskbar window.
-- Open **Settings...** from the tray and verify a single native window appears with the saved values
-  for both shortcuts, autosave folder, image format, JPEG quality, PNG compression, full-screen
-  scope, and cursor inclusion. Launch once with `rustshot.exe --settings` and verify the same window.
-- Open Settings a second time while it is already visible. Verify Rustshot focuses the existing
-  window instead of creating another one, and verify capture shortcuts do nothing until it closes.
-- Change a field and choose **Cancel** or press Escape. Decline and then accept the discard prompt;
-  verify the active and persisted settings did not change.
-- Choose **Restore defaults**, verify it changes only the draft, then cancel. Repeat and save to
-  confirm all defaults are applied.
-- Use **Browse...** with a folder containing spaces and non-ASCII characters. Save, restart
-  Rustshot, and verify the exact path and every other field round-trip.
-- Focus each shortcut field, press a new combination, and verify the displayed value is replaced
-  rather than typed character-by-character. Confirm modifier-only presses do not replace it, Tab
-  and Shift+Tab still navigate, and combinations using Ctrl, Shift, Alt, and the Windows key record.
-  In particular, hold Ctrl+Shift+Backspace and verify all three keys appear in the recorded shortcut.
-- Save both shortcuts. Verify the old shortcuts stop working immediately and the new shortcuts work
-  without restarting.
-- Try invalid, duplicate, and already-reserved shortcuts. Verify the window reports the error,
-  retains the draft, and keeps the previous shortcut pair active.
-- Select PNG and verify JPEG quality is disabled; select JPEG and verify PNG compression is
-  disabled. Verify JPEG qualities `1` and `100`, and all three PNG compression choices.
-- Verify invalid JPEG values (`0`, `101`, and blank) are rejected without closing the window.
+- Open **Settings...** and verify the saved shortcuts, autosave folder, image options, capture
+  scope, cursor inclusion, automatic copy, and automatic save values. Launch once with
+  `rustshot.exe --settings` and verify the same window.
+- Open Settings again while it is visible. Verify Rustshot focuses the existing window and capture
+  shortcuts do nothing until it closes.
+- Change a field and choose **Cancel** or press Escape. Verify active and persisted settings remain
+  unchanged. Verify **Restore defaults** changes only the draft until saved.
+- Use **Browse...** with a folder containing spaces and non-ASCII characters. Save, restart, and
+  verify every field round-trips.
+- Record modifier-only keys, Tab, Shift+Tab, Windows-key chords, `Ctrl+Shift+Backspace`, and
+  `Ctrl+Shift+Alt+Backspace`. Verify navigation still works and every held modifier is preserved.
+- Save both shortcuts. Verify old shortcuts stop working and new shortcuts work without restart.
+- Try invalid, duplicate, and reserved shortcuts. Verify the draft remains open and the previous
+  shortcut pair remains active.
+- Toggle PNG/JPEG and verify only the relevant quality control is enabled. Check JPEG qualities 1
+  and 100, all PNG compression choices, and rejection of 0, 101, and blank quality values.
 - Move the settings window between displays with different scale factors and operate every control
-  using only Tab, Shift+Tab, arrow keys, Space, Enter, and Escape.
+  using only the keyboard.
 
-## Immediate capture
+## Immediate capture and automatic region actions
 
-- Trigger full-screen autosave for `cursor_monitor` and `virtual_desktop`.
-- Verify the file has the expected dimensions, format, extension, and nonzero contents.
-- Repeat with `include_cursor = true` and `false`, keeping the pointer over a static background.
-- Trigger two captures in the same millisecond range and verify neither file is overwritten.
+- Trigger full-screen autosave for `cursor_monitor` and `virtual_desktop`, with cursor inclusion on
+  and off. Verify dimensions, format, extension, cursor pixels, and collision-safe filenames.
+- Enable region auto-copy only. Select a region, verify the editor is skipped, then paste into Paint.
+- Enable region autosave only. Select a region and verify one file appears in the configured folder.
+- Enable both automatic options. Verify one selection is both copied and saved.
+- Disable both options and verify region selection opens the editor normally.
 - Attempt to quit while a large capture is encoding; verify Rustshot waits for the operation.
 
-## Region editor
+## Region selection and editor
 
-- Drag in all four directions, including to the monitor's right and bottom edges.
-- On a high-density display, verify the toolbar remains comfortably sized.
-- Exercise pen, highlighter, line, arrow, rectangle, colors, widths, clear, undo, and redo.
-- Change tools during a held drag. Export during a held drag. Verify the original stroke is retained.
+- Drag a selection in all four directions and to the monitor's right and bottom edges.
+- Move the selection and resize it from every corner and edge handle before editing.
+- On high-density and narrow displays, verify both toolbar rows, hover tooltips, and the bottom
+  shortcut hint remain readable and reachable.
+- Exercise pen, highlighter, line, arrow, rectangle, ellipse, text, multiline text, callout, secure
+  redaction, pixelation, eraser, crop, eyedropper, palette color, custom color, and every width.
+- With Select, hit objects in overlapping areas, move them, resize from all eight handles, recolor,
+  restyle, and delete. Verify undo/redo returns each object and style exactly.
+- Crop after adding annotations. Verify objects rebase to the new origin and exports match the crop.
+- Export a solid redaction and inspect the pixels in an image editor; verify the covered area is
+  opaque black rather than translucent or recoverable. Repeat for pixelation.
+- Change tools during a held drag and export during a held drag. Verify the original stroke remains.
 - Cancel Save As, cancel Print, and provoke a failed copy/save. Verify annotations remain and a
   second attempt exports the same pixels.
+- End a session after changing tool, color, and width. Open another region editor and verify those
+  three choices are restored.
 
-## Outputs
+## Outputs and performance
 
-- Save as PNG and JPEG, confirm overwrite in the dialog, and type a mismatched extension. Verify the
-  encoder-selected extension and decoded file contents.
-- Copy, then paste into Paint and an Office application. Verify dimensions, colors, and alpha.
-- Open Print, cancel, retry, and print to both Microsoft Print to PDF and one physical driver. Verify
+- In Save As, choose PNG, `.jpg`, and `.jpeg` regardless of the configured default. Decode each
+  file and verify its actual format matches the selected extension.
+- Confirm overwrite in the dialog and enter an unsupported/no extension. Verify Rustshot applies
+  the configured default extension without format mismatch.
+- Copy and paste into Paint and an Office application. Verify dimensions and colors.
+- Open Print, cancel, retry, and print to Microsoft Print to PDF and a physical driver. Verify
   aspect-fit placement and no cropped edges.
+- Measure the tray process after startup and several idle minutes; verify it performs no periodic
+  capture/render work and retains no screen-sized buffer.
+- During an object drag, watch private memory across repeated pointer moves. Verify it remains
+  bounded and drops back after the editor closes.
+
+## Automated release gate
+
+```powershell
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked --all-targets
+cargo build --release --locked
+```

@@ -51,6 +51,16 @@ pub struct Config {
     pub monitor_scope: MonitorScope,
     /// Whether the mouse cursor is composited into captures.
     pub include_cursor: bool,
+    /// Copy a selected region immediately instead of opening the editor.
+    pub region_auto_copy: bool,
+    /// Save a selected region immediately instead of opening the editor.
+    pub region_autosave: bool,
+    /// Tool restored when the next region editor opens.
+    pub last_editor_tool: EditorTool,
+    /// Opaque annotation color restored by the region editor.
+    pub editor_color: RgbColor,
+    /// Index into the editor's compact stroke-width table.
+    pub editor_stroke_width: u8,
 }
 
 impl Config {
@@ -181,6 +191,12 @@ impl Config {
             ));
         }
 
+        if self.editor_stroke_width > 3 {
+            return Err(ConfigValidationError::InvalidEditorStrokeWidth(
+                self.editor_stroke_width,
+            ));
+        }
+
         Ok(())
     }
 }
@@ -196,6 +212,11 @@ impl Default for Config {
             png_compression: PngCompression::default(),
             monitor_scope: MonitorScope::default(),
             include_cursor: true,
+            region_auto_copy: false,
+            region_autosave: false,
+            last_editor_tool: EditorTool::default(),
+            editor_color: RgbColor::default(),
+            editor_stroke_width: 1,
         }
     }
 }
@@ -337,6 +358,48 @@ pub enum MonitorScope {
     VirtualDesktop,
 }
 
+/// Editor tool persisted between region-capture sessions.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorTool {
+    Select,
+    #[default]
+    Pen,
+    Highlighter,
+    Line,
+    Arrow,
+    Rectangle,
+    Ellipse,
+    Text,
+    Callout,
+    Redact,
+    Pixelate,
+    Eraser,
+    Crop,
+    Eyedropper,
+}
+
+/// Compact serializable RGB color used for editor preferences.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RgbColor {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+}
+
+impl RgbColor {
+    #[must_use]
+    pub const fn new(red: u8, green: u8, blue: u8) -> Self {
+        Self { red, green, blue }
+    }
+}
+
+impl Default for RgbColor {
+    fn default() -> Self {
+        Self::new(255, 64, 64)
+    }
+}
+
 /// Identifies one of the two independently configurable capture shortcuts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShortcutBinding {
@@ -396,6 +459,9 @@ pub enum ConfigValidationError {
     /// The configured autosave destination is an existing regular file.
     #[error("autosave directory points to an existing file: `{}`", .0.display())]
     AutosaveDirectoryIsFile(PathBuf),
+    /// The persisted editor width does not index the fixed width table.
+    #[error("editor stroke-width index must be between 0 and 3, got {0}")]
+    InvalidEditorStrokeWidth(u8),
 }
 
 /// Failure while resolving, loading, validating, or saving settings.
@@ -514,8 +580,8 @@ mod tests {
     };
 
     use super::{
-        Config, ConfigError, ConfigValidationError, MonitorScope, PngCompression, ScreenshotFormat,
-        Shortcut,
+        Config, ConfigError, ConfigValidationError, EditorTool, MonitorScope, PngCompression,
+        RgbColor, ScreenshotFormat, Shortcut,
     };
 
     static TEST_DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -603,6 +669,16 @@ mod tests {
     }
 
     #[test]
+    fn editor_width_index_is_validated() {
+        let mut config = Config::default();
+        config.editor_stroke_width = 4;
+        assert_eq!(
+            config.validate(),
+            Err(ConfigValidationError::InvalidEditorStrokeWidth(4))
+        );
+    }
+
+    #[test]
     fn empty_autosave_directory_is_rejected() {
         let mut config = Config::default();
         config.autosave_directory = PathBuf::new();
@@ -638,6 +714,11 @@ mod tests {
             png_compression: PngCompression::Best,
             monitor_scope: MonitorScope::VirtualDesktop,
             include_cursor: false,
+            region_auto_copy: true,
+            region_autosave: true,
+            last_editor_tool: EditorTool::Callout,
+            editor_color: RgbColor::new(12, 34, 56),
+            editor_stroke_width: 3,
         };
 
         let serialized = toml::to_string_pretty(&config).expect("config should serialize");

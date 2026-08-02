@@ -64,6 +64,8 @@ const IDC_SETTINGS_STATUS: i32 = 1011;
 const IDC_JPEG_QUALITY_LABEL: i32 = 1012;
 const IDC_PNG_COMPRESSION_LABEL: i32 = 1013;
 const IDC_PNG_HELP: i32 = 1014;
+const IDC_REGION_AUTO_COPY: i32 = 1015;
+const IDC_REGION_AUTOSAVE: i32 = 1016;
 
 const WM_SETTINGS_RESULT: u32 = WM_APP + 41;
 const WM_SETTINGS_FOCUS: u32 = WM_APP + 42;
@@ -132,7 +134,7 @@ const VK_OEM_6: u32 = 0xdd;
 const VK_OEM_7: u32 = 0xde;
 const VK_PLAY: u32 = 0xfa;
 
-const INTERACTIVE_CONTROLS: [i32; 11] = [
+const INTERACTIVE_CONTROLS: [i32; 13] = [
     IDC_FULLSCREEN_SHORTCUT,
     IDC_REGION_SHORTCUT,
     IDC_AUTOSAVE_DIRECTORY,
@@ -142,6 +144,8 @@ const INTERACTIVE_CONTROLS: [i32; 11] = [
     IDC_PNG_COMPRESSION,
     IDC_MONITOR_SCOPE,
     IDC_INCLUDE_CURSOR,
+    IDC_REGION_AUTO_COPY,
+    IDC_REGION_AUTOSAVE,
     IDC_RESTORE_DEFAULTS,
     IDOK,
 ];
@@ -393,7 +397,7 @@ unsafe fn submit_settings(hwnd: HWND, state: *mut DialogState) -> isize {
     if (*state).pending {
         return 1;
     }
-    let values = match read_settings_values(hwnd) {
+    let values = match read_settings_values(hwnd, &(*state).initial_config) {
         Ok(values) => values,
         Err(error) => {
             show_native_error(hwnd, "Invalid settings", &format!("{error:#}"));
@@ -830,10 +834,23 @@ fn apply_config_to_controls(hwnd: HWND, config: &Config) -> Result<()> {
         )
     }
     .context("could not initialize cursor inclusion")?;
+    for (control_id, checked) in [
+        (IDC_REGION_AUTO_COPY, values.region_auto_copy),
+        (IDC_REGION_AUTOSAVE, values.region_autosave),
+    ] {
+        unsafe {
+            CheckDlgButton(
+                hwnd,
+                control_id,
+                if checked { BST_CHECKED } else { BST_UNCHECKED },
+            )
+        }
+        .with_context(|| format!("could not initialize capture option {control_id}"))?;
+    }
     update_codec_control_state(hwnd)
 }
 
-fn read_settings_values(hwnd: HWND) -> Result<SettingsValues> {
+fn read_settings_values(hwnd: HWND, current: &Config) -> Result<SettingsValues> {
     let fullscreen_shortcut = read_text(hwnd, IDC_FULLSCREEN_SHORTCUT)
         .context("could not read the full-screen shortcut")?;
     let region_shortcut =
@@ -845,6 +862,9 @@ fn read_settings_values(hwnd: HWND) -> Result<SettingsValues> {
     let jpeg_quality = read_text(hwnd, IDC_JPEG_QUALITY).context("could not read JPEG quality")?;
     // SAFETY: the checkbox belongs to the live settings dialog.
     let include_cursor = unsafe { IsDlgButtonChecked(hwnd, IDC_INCLUDE_CURSOR) } == BST_CHECKED.0;
+    let region_auto_copy =
+        unsafe { IsDlgButtonChecked(hwnd, IDC_REGION_AUTO_COPY) } == BST_CHECKED.0;
+    let region_autosave = unsafe { IsDlgButtonChecked(hwnd, IDC_REGION_AUTOSAVE) } == BST_CHECKED.0;
 
     Ok(SettingsValues {
         fullscreen_shortcut,
@@ -855,6 +875,11 @@ fn read_settings_values(hwnd: HWND) -> Result<SettingsValues> {
         png_compression_index: combo_selection(hwnd, IDC_PNG_COMPRESSION)?,
         monitor_scope_index: combo_selection(hwnd, IDC_MONITOR_SCOPE)?,
         include_cursor,
+        region_auto_copy,
+        region_autosave,
+        last_editor_tool: current.last_editor_tool,
+        editor_color: current.editor_color,
+        editor_stroke_width: current.editor_stroke_width,
     })
 }
 
@@ -868,6 +893,11 @@ struct SettingsValues {
     png_compression_index: usize,
     monitor_scope_index: usize,
     include_cursor: bool,
+    region_auto_copy: bool,
+    region_autosave: bool,
+    last_editor_tool: rustshot::config::EditorTool,
+    editor_color: rustshot::config::RgbColor,
+    editor_stroke_width: u8,
 }
 
 impl SettingsValues {
@@ -885,6 +915,11 @@ impl SettingsValues {
             },
             monitor_scope_index: usize::from(config.monitor_scope == MonitorScope::VirtualDesktop),
             include_cursor: config.include_cursor,
+            region_auto_copy: config.region_auto_copy,
+            region_autosave: config.region_autosave,
+            last_editor_tool: config.last_editor_tool,
+            editor_color: config.editor_color,
+            editor_stroke_width: config.editor_stroke_width,
         }
     }
 
@@ -947,6 +982,11 @@ impl SettingsValues {
             png_compression,
             monitor_scope,
             include_cursor: self.include_cursor,
+            region_auto_copy: self.region_auto_copy,
+            region_autosave: self.region_autosave,
+            last_editor_tool: self.last_editor_tool,
+            editor_color: self.editor_color,
+            editor_stroke_width: self.editor_stroke_width,
         };
         config.validate().map_err(|error| {
             let control_id = match &error {
@@ -958,6 +998,7 @@ impl SettingsValues {
                 ConfigValidationError::InvalidJpegQuality(_) => IDC_JPEG_QUALITY,
                 ConfigValidationError::EmptyAutosaveDirectory
                 | ConfigValidationError::AutosaveDirectoryIsFile(_) => IDC_AUTOSAVE_DIRECTORY,
+                ConfigValidationError::InvalidEditorStrokeWidth(_) => IDC_RESTORE_DEFAULTS,
             };
             SettingsInputError::new(control_id, format!("Settings are invalid.\n\n{error}"))
         })?;
@@ -998,6 +1039,8 @@ struct ControlSnapshot {
     png_compression: isize,
     monitor_scope: isize,
     include_cursor: u32,
+    region_auto_copy: u32,
+    region_autosave: u32,
 }
 
 fn read_snapshot(hwnd: HWND) -> Result<ControlSnapshot> {
@@ -1024,6 +1067,8 @@ fn read_snapshot(hwnd: HWND) -> Result<ControlSnapshot> {
             SendDlgItemMessageW(hwnd, IDC_MONITOR_SCOPE, CB_GETCURSEL, WPARAM(0), LPARAM(0)).0
         },
         include_cursor: unsafe { IsDlgButtonChecked(hwnd, IDC_INCLUDE_CURSOR) },
+        region_auto_copy: unsafe { IsDlgButtonChecked(hwnd, IDC_REGION_AUTO_COPY) },
+        region_autosave: unsafe { IsDlgButtonChecked(hwnd, IDC_REGION_AUTOSAVE) },
     })
 }
 
@@ -1277,6 +1322,8 @@ mod tests {
             ("IDC_JPEG_QUALITY_LABEL", IDC_JPEG_QUALITY_LABEL),
             ("IDC_PNG_COMPRESSION_LABEL", IDC_PNG_COMPRESSION_LABEL),
             ("IDC_PNG_HELP", IDC_PNG_HELP),
+            ("IDC_REGION_AUTO_COPY", IDC_REGION_AUTO_COPY),
+            ("IDC_REGION_AUTOSAVE", IDC_REGION_AUTOSAVE),
         ];
 
         for (name, value) in expected {
@@ -1314,6 +1361,23 @@ mod tests {
         .expect("Ctrl+Shift+Backspace should be recordable");
 
         assert_eq!(shortcut.as_str(), "shift+control+Backspace");
+    }
+
+    #[test]
+    fn shortcut_recorder_supports_more_than_three_simultaneous_keys() {
+        let shortcut = shortcut_from_virtual_key(
+            VK_BACK,
+            false,
+            ShortcutModifiers {
+                shift: true,
+                control: true,
+                alt: true,
+                ..Default::default()
+            },
+        )
+        .expect("Ctrl+Shift+Alt+Backspace should be recordable");
+
+        assert_eq!(shortcut.as_str(), "shift+control+alt+Backspace");
     }
 
     #[test]
@@ -1402,6 +1466,11 @@ mod tests {
             png_compression: PngCompression::Best,
             monitor_scope: MonitorScope::VirtualDesktop,
             include_cursor: false,
+            region_auto_copy: true,
+            region_autosave: true,
+            last_editor_tool: rustshot::config::EditorTool::Pixelate,
+            editor_color: rustshot::config::RgbColor::new(12, 34, 56),
+            editor_stroke_width: 3,
         };
 
         let actual = SettingsValues::from_config(&expected)

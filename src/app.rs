@@ -36,7 +36,7 @@ use winit::{
 };
 
 use crate::{
-    overlay::{Overlay, OverlayOutcome},
+    overlay::{EditorPreferences, Overlay, OverlayOutcome},
     settings::{run_settings_dialog, SettingsResponder, SettingsWindowHandle},
 };
 
@@ -254,7 +254,16 @@ impl RustshotApp {
         };
 
         match kind {
-            CaptureKind::Region => match Overlay::new(event_loop, frame) {
+            CaptureKind::Region => match Overlay::new(
+                event_loop,
+                frame,
+                EditorPreferences {
+                    tool: self.config.last_editor_tool,
+                    color: self.config.editor_color,
+                    stroke_width: self.config.editor_stroke_width,
+                },
+                self.config.region_auto_copy || self.config.region_autosave,
+            ) {
                 Ok(overlay) => self.overlay = Some(overlay),
                 Err(error) => {
                     self.busy = false;
@@ -275,8 +284,24 @@ impl RustshotApp {
         origin: SaveOrigin,
         replace_existing: bool,
     ) {
+        self.spawn_save_with_options(
+            frame,
+            destination,
+            origin,
+            replace_existing,
+            EncodeOptions::from(&self.config),
+        );
+    }
+
+    fn spawn_save_with_options(
+        &self,
+        frame: Frame,
+        destination: PathBuf,
+        origin: SaveOrigin,
+        replace_existing: bool,
+        options: EncodeOptions,
+    ) {
         let proxy = self.proxy.clone();
-        let options = EncodeOptions::from(&self.config);
         thread::spawn(move || {
             let save_result = if replace_existing {
                 encode_and_save_replace_atomic(&frame, options, &destination)
@@ -300,24 +325,35 @@ impl RustshotApp {
 
     fn save_as(&mut self, frame: Frame) {
         self.set_overlay_visible(false);
-        let options = EncodeOptions::from(&self.config);
-        let (filter_name, extension) = match options.format {
-            OutputFormat::Png => ("PNG image", "png"),
-            OutputFormat::Jpeg => ("JPEG image", "jpg"),
-        };
+        let default_options = EncodeOptions::from(&self.config);
+        let extension = default_options.format.extension();
         let file_name = format!("{}.{}", screenshot_stem(), extension);
-        let selected = FileDialog::new()
+        let dialog = FileDialog::new()
             .set_title("Save Rustshot screenshot")
             .set_directory(&self.config.autosave_directory)
-            .set_file_name(file_name)
-            .add_filter(filter_name, &[extension])
-            .save_file();
+            .set_file_name(file_name);
+        let dialog = match default_options.format {
+            OutputFormat::Png => dialog
+                .add_filter("PNG image", &["png"])
+                .add_filter("JPEG image", &["jpg", "jpeg"]),
+            OutputFormat::Jpeg => dialog
+                .add_filter("JPEG image", &["jpg", "jpeg"])
+                .add_filter("PNG image", &["png"]),
+        };
+        let selected = dialog.save_file();
 
         let Some(selected) = selected else {
             self.set_overlay_visible(true);
             return;
         };
-        let destination = ensure_extension(selected.clone(), extension);
+        let selected_format = output_format_from_path(&selected).unwrap_or(default_options.format);
+        let mut options = default_options;
+        options.format = selected_format;
+        let destination = if output_format_from_path(&selected).is_some() {
+            selected.clone()
+        } else {
+            ensure_extension(selected.clone(), selected_format.extension())
+        };
         let replace_existing = destination.exists();
         if destination != selected
             && replace_existing
@@ -325,7 +361,8 @@ impl RustshotApp {
                 .set_level(MessageLevel::Warning)
                 .set_title("Replace existing screenshot?")
                 .set_description(format!(
-                    "Rustshot will encode this image as .{extension}.\n\nReplace `{}`?",
+                    "Rustshot will encode this image as .{}.\n\nReplace `{}`?",
+                    selected_format.extension(),
                     destination.display()
                 ))
                 .set_buttons(MessageButtons::YesNo)
@@ -335,15 +372,25 @@ impl RustshotApp {
             self.set_overlay_visible(true);
             return;
         }
-        self.spawn_save(frame, destination, SaveOrigin::Editor, replace_existing);
+        self.spawn_save_with_options(
+            frame,
+            destination,
+            SaveOrigin::Editor,
+            replace_existing,
+            options,
+        );
     }
 
     fn finish_overlay(&mut self, outcome: OverlayOutcome) {
         match outcome {
             OverlayOutcome::None => {}
             OverlayOutcome::Cancel => {
+                self.remember_overlay_preferences();
                 self.overlay = None;
                 self.busy = false;
+            }
+            OverlayOutcome::Finish(frame) => {
+                self.finish_region_automatically(frame);
             }
             OverlayOutcome::Save(frame) => {
                 self.save_as(frame);
@@ -358,6 +405,7 @@ impl RustshotApp {
                     .and_then(|owner| copy_to_clipboard_with_owner(&frame, owner));
                 match result {
                     Ok(()) => {
+                        self.remember_overlay_preferences();
                         self.overlay = None;
                         self.busy = false;
                     }
@@ -376,6 +424,48 @@ impl RustshotApp {
                 self.busy = false;
                 show_error("Region editor failed", &error);
             }
+        }
+    }
+
+    fn finish_region_automatically(&mut self, frame: Frame) {
+        if self.config.region_auto_copy {
+            let result = self
+                .overlay
+                .as_ref()
+                .context("region selection window no longer exists")
+                .and_then(|overlay| overlay.owner_hwnd())
+                .and_then(|owner| copy_to_clipboard_with_owner(&frame, owner));
+            if let Err(error) = result {
+                show_error("Could not copy screenshot", &error.to_string());
+                return;
+            }
+        }
+
+        self.remember_overlay_preferences();
+        self.overlay = None;
+        if self.config.region_autosave {
+            let destination = next_autosave_path(&self.config);
+            self.spawn_save(frame, destination, SaveOrigin::Autosave, false);
+        } else {
+            self.busy = false;
+        }
+    }
+
+    fn remember_overlay_preferences(&mut self) {
+        let Some(preferences) = self.overlay.as_ref().map(Overlay::editor_preferences) else {
+            return;
+        };
+        if self.config.last_editor_tool == preferences.tool
+            && self.config.editor_color == preferences.color
+            && self.config.editor_stroke_width == preferences.stroke_width
+        {
+            return;
+        }
+        self.config.last_editor_tool = preferences.tool;
+        self.config.editor_color = preferences.color;
+        self.config.editor_stroke_width = preferences.stroke_width;
+        if let Err(error) = self.config.save() {
+            show_error("Could not remember editor preferences", &error.to_string());
         }
     }
 
@@ -601,6 +691,7 @@ impl ApplicationHandler<AppEvent> for RustshotApp {
                     show_error("Could not save screenshot", &error);
                 }
                 (SaveOrigin::Editor, Ok(_)) => {
+                    self.remember_overlay_preferences();
                     self.overlay = None;
                     self.busy = false;
                 }
@@ -611,6 +702,7 @@ impl ApplicationHandler<AppEvent> for RustshotApp {
             },
             AppEvent::PrintFinished { result } => match result {
                 Ok(PrintOutcome::Printed) => {
+                    self.remember_overlay_preferences();
                     self.overlay = None;
                     self.busy = false;
                 }
@@ -836,6 +928,17 @@ fn ensure_extension(mut path: PathBuf, extension: &str) -> PathBuf {
     path
 }
 
+fn output_format_from_path(path: &Path) -> Option<OutputFormat> {
+    let extension = path.extension()?.to_str()?;
+    if extension.eq_ignore_ascii_case("png") {
+        Some(OutputFormat::Png)
+    } else if extension.eq_ignore_ascii_case("jpg") || extension.eq_ignore_ascii_case("jpeg") {
+        Some(OutputFormat::Jpeg)
+    } else {
+        None
+    }
+}
+
 fn open_path(path: &Path) -> Result<()> {
     std::fs::create_dir_all(path)
         .with_context(|| format!("could not create `{}`", path.display()))?;
@@ -856,7 +959,10 @@ fn show_error(title: &str, description: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{commit_settings, ensure_extension, SettingsCommitBackend};
+    use super::{
+        commit_settings, ensure_extension, output_format_from_path, OutputFormat,
+        SettingsCommitBackend,
+    };
     use anyhow::{bail, Result};
     use rustshot::config::Config;
     use std::path::PathBuf;
@@ -921,6 +1027,22 @@ mod tests {
         assert_eq!(
             ensure_extension(PathBuf::from("capture.PNG"), "png"),
             PathBuf::from("capture.PNG")
+        );
+    }
+
+    #[test]
+    fn save_format_follows_the_extension_selected_in_the_dialog() {
+        assert_eq!(
+            output_format_from_path(std::path::Path::new("capture.png")),
+            Some(OutputFormat::Png)
+        );
+        assert_eq!(
+            output_format_from_path(std::path::Path::new("capture.JPEG")),
+            Some(OutputFormat::Jpeg)
+        );
+        assert_eq!(
+            output_format_from_path(std::path::Path::new("capture.unsupported")),
+            None
         );
     }
 
