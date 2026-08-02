@@ -1,0 +1,354 @@
+[CmdletBinding()]
+param(
+    [string] $ResultsDirectory,
+    [string] $OutputPath,
+    [string] $PublicReportsDirectory,
+    [switch] $SkipPublicCopy
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$invariant = [System.Globalization.CultureInfo]::InvariantCulture
+$benchmarkRoot = $PSScriptRoot
+$repositoryRoot = Split-Path -Parent $benchmarkRoot
+
+function Resolve-ResultsDirectory([string] $Path) {
+    if (![string]::IsNullOrWhiteSpace($Path)) {
+        return (Resolve-Path -LiteralPath $Path).Path
+    }
+
+    $resultsRoot = Join-Path $benchmarkRoot 'results'
+    $latest = Get-ChildItem -LiteralPath $resultsRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'summary.json') -PathType Leaf } |
+        Sort-Object -Property LastWriteTime -Descending |
+        Select-Object -First 1
+    if (!$latest) {
+        throw "No benchmark result containing summary.json was found under $resultsRoot"
+    }
+    return $latest.FullName
+}
+
+function Format-Number([object] $Value, [int] $Digits = 2) {
+    if ($null -eq $Value) {
+        return '-'
+    }
+    return ([double]$Value).ToString("N$Digits", $invariant)
+}
+
+function Format-Integer([object] $Value) {
+    if ($null -eq $Value) {
+        return '-'
+    }
+    return ([long]$Value).ToString('N0', $invariant)
+}
+
+function Format-Mebibytes([object] $Bytes) {
+    if ($null -eq $Bytes) {
+        return '-'
+    }
+    return "$(Format-Number ([double]$Bytes / 1MB) 2) MiB"
+}
+
+function Format-LowerAdvantage(
+    [object] $RustshotValue,
+    [object] $LightshotValue,
+    [string] $PositiveWord = 'lower',
+    [string] $NegativeWord = 'higher'
+) {
+    if ($null -eq $RustshotValue -or $null -eq $LightshotValue -or [double]$LightshotValue -eq 0) {
+        return '-'
+    }
+    $difference = 100.0 * ([double]$LightshotValue - [double]$RustshotValue) / [double]$LightshotValue
+    if ($difference -ge 0) {
+        return "$(Format-Number $difference 2)% $PositiveWord"
+    }
+    return "$(Format-Number ([Math]::Abs($difference)) 2)% $NegativeWord"
+}
+
+function Format-SizeDifference([object] $RustshotValue, [object] $LightshotValue) {
+    if ($null -eq $RustshotValue -or $null -eq $LightshotValue -or [double]$LightshotValue -eq 0) {
+        return '-'
+    }
+    $ratio = [double]$RustshotValue / [double]$LightshotValue
+    if ($ratio -ge 1) {
+        return "$(Format-Number $ratio 2)x as large"
+    }
+    return "$(Format-Number (1.0 / $ratio) 2)x smaller"
+}
+
+function Escape-MarkdownCell([object] $Value) {
+    if ($null -eq $Value) {
+        return '-'
+    }
+    return ([string]$Value).Replace('|', '\|').Replace("`r", ' ').Replace("`n", ' ')
+}
+
+function Add-MarkdownTable {
+    param(
+        [System.Collections.Generic.List[string]] $Lines,
+        [string[]] $Headers,
+        [object[]] $Rows
+    )
+
+    $Lines.Add('| ' + (($Headers | ForEach-Object { Escape-MarkdownCell $_ }) -join ' | ') + ' |')
+    $Lines.Add('| ' + (($Headers | ForEach-Object { '---' }) -join ' | ') + ' |')
+    foreach ($row in $Rows) {
+        $Lines.Add('| ' + (($row | ForEach-Object { Escape-MarkdownCell $_ }) -join ' | ') + ' |')
+    }
+}
+
+function Get-Application([object[]] $Applications, [string] $Name) {
+    return $Applications | Where-Object application -eq $Name | Select-Object -First 1
+}
+
+function Get-TrialStats([object[]] $Trials, [string] $Application) {
+    $measured = @($Trials | Where-Object {
+            $_.application -eq $Application -and $_.warmup -eq 'False'
+        })
+    $successful = @($measured | Where-Object success -eq 'True')
+    $dimensionFailures = @($measured | Where-Object dimension_pass -ne 'True')
+    $pixelFailures = @($measured | Where-Object pixel_pass -ne 'True')
+    return [pscustomobject]@{
+        Measured = $measured.Count
+        Successful = $successful.Count
+        Failed = $measured.Count - $successful.Count
+        DimensionFailures = $dimensionFailures.Count
+        PixelFailures = $pixelFailures.Count
+    }
+}
+
+function Get-PublicReportName([string] $Timestamp) {
+    $parsed = [DateTimeOffset]::MinValue
+    if ([DateTimeOffset]::TryParse(
+            $Timestamp,
+            $invariant,
+            [System.Globalization.DateTimeStyles]::RoundtripKind,
+            [ref]$parsed)) {
+        return $parsed.ToString('yyyyMMdd-HHmmss', $invariant) + '.md'
+    }
+    return 'benchmark-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss', $invariant) + '.md'
+}
+
+function Write-PublicReportIndex([string] $Directory) {
+    $reports = @(Get-ChildItem -LiteralPath $Directory -Filter '*.md' -File |
+            Where-Object Name -ne 'README.md' |
+            Sort-Object -Property Name -Descending)
+    $index = [System.Collections.Generic.List[string]]::new()
+    $index.Add('# Published benchmark reports')
+    $index.Add('')
+    $index.Add('Shareable Rustshot-versus-Lightshot reports generated by the interactive Windows benchmark harness.')
+    $index.Add('Raw CSV and JSON artifacts remain local because they can contain machine-specific paths and identifiers.')
+    $index.Add('')
+    if (!$reports.Count) {
+        $index.Add('_No reports have been published yet._')
+    }
+    else {
+        foreach ($report in $reports) {
+            $index.Add("- [$($report.BaseName)]($($report.Name))")
+        }
+    }
+    $index | Set-Content -LiteralPath (Join-Path $Directory 'README.md') -Encoding UTF8
+}
+
+$ResultsDirectory = Resolve-ResultsDirectory $ResultsDirectory
+$summaryPath = Join-Path $ResultsDirectory 'summary.json'
+$trialsPath = Join-Path $ResultsDirectory 'trials.csv'
+$processPath = Join-Path $ResultsDirectory 'process.csv'
+if (!(Test-Path -LiteralPath $summaryPath -PathType Leaf)) {
+    throw "Missing benchmark summary: $summaryPath"
+}
+if (!(Test-Path -LiteralPath $trialsPath -PathType Leaf)) {
+    throw "Missing benchmark trials: $trialsPath"
+}
+
+if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    $OutputPath = Join-Path $ResultsDirectory 'report.md'
+}
+elseif (![System.IO.Path]::IsPathRooted($OutputPath)) {
+    $OutputPath = Join-Path $ResultsDirectory $OutputPath
+}
+$OutputPath = [System.IO.Path]::GetFullPath($OutputPath)
+
+$summary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json
+$applications = @($summary.applications)
+$trials = @(Import-Csv -LiteralPath $trialsPath)
+$rustshot = Get-Application $applications 'Rustshot'
+$lightshot = Get-Application $applications 'Lightshot'
+$lines = [System.Collections.Generic.List[string]]::new()
+
+$lines.Add('# Rustshot vs. Lightshot benchmark report')
+$lines.Add('')
+$lines.Add("Generated from the benchmark run at **$(Escape-MarkdownCell $summary.environment.timestamp)**.")
+$lines.Add('')
+
+if ($rustshot -and $lightshot) {
+    $activationAdvantage = Format-LowerAdvantage `
+        $rustshot.activation_ms.median `
+        $lightshot.activation_ms.median `
+        'faster' `
+        'slower'
+    $copyAdvantage = Format-LowerAdvantage `
+        $rustshot.copy_ms.median `
+        $lightshot.copy_ms.median `
+        'faster' `
+        'slower'
+    $memoryAdvantage = Format-LowerAdvantage `
+        $rustshot.private_bytes `
+        $lightshot.private_bytes `
+        'lower' `
+        'higher'
+
+    $lines.Add('## Highlights')
+    $lines.Add('')
+    $lines.Add("- Rustshot's median overlay activation was **$activationAdvantage**: $(Format-Number $rustshot.activation_ms.median) ms versus $(Format-Number $lightshot.activation_ms.median) ms.")
+    $lines.Add("- Rustshot's median copy completion was **$copyAdvantage**: $(Format-Number $rustshot.copy_ms.median) ms versus $(Format-Number $lightshot.copy_ms.median) ms.")
+    $lines.Add("- Rustshot used **$memoryAdvantage private memory**: $(Format-Mebibytes $rustshot.private_bytes) versus $(Format-Mebibytes $lightshot.private_bytes).")
+    $lines.Add("- Reliability was **$(Format-Number $rustshot.success_rate_percent)% for Rustshot** and **$(Format-Number $lightshot.success_rate_percent)% for Lightshot**.")
+    $lines.Add('')
+
+    $lines.Add('## Latency')
+    $lines.Add('')
+    Add-MarkdownTable $lines `
+        @('Metric', 'Lightshot', 'Rustshot', 'Rustshot difference') `
+        @(
+            @('Cold readiness', "$(Format-Number $lightshot.cold_readiness_ms) ms", "$(Format-Number $rustshot.cold_readiness_ms) ms", (Format-LowerAdvantage $rustshot.cold_readiness_ms $lightshot.cold_readiness_ms 'faster' 'slower')),
+            @('Activation median', "$(Format-Number $lightshot.activation_ms.median) ms", "$(Format-Number $rustshot.activation_ms.median) ms", (Format-LowerAdvantage $rustshot.activation_ms.median $lightshot.activation_ms.median 'faster' 'slower')),
+            @('Activation p95', "$(Format-Number $lightshot.activation_ms.p95) ms", "$(Format-Number $rustshot.activation_ms.p95) ms", (Format-LowerAdvantage $rustshot.activation_ms.p95 $lightshot.activation_ms.p95 'faster' 'slower')),
+            @('Copy median', "$(Format-Number $lightshot.copy_ms.median) ms", "$(Format-Number $rustshot.copy_ms.median) ms", (Format-LowerAdvantage $rustshot.copy_ms.median $lightshot.copy_ms.median 'faster' 'slower')),
+            @('Copy p95', "$(Format-Number $lightshot.copy_ms.p95) ms", "$(Format-Number $rustshot.copy_ms.p95) ms", (Format-LowerAdvantage $rustshot.copy_ms.p95 $lightshot.copy_ms.p95 'faster' 'slower')),
+            @('Workflow median', "$(Format-Number $lightshot.workflow_ms.median) ms", "$(Format-Number $rustshot.workflow_ms.median) ms", (Format-LowerAdvantage $rustshot.workflow_ms.median $lightshot.workflow_ms.median 'faster' 'slower')),
+            @('Workflow p95', "$(Format-Number $lightshot.workflow_ms.p95) ms", "$(Format-Number $rustshot.workflow_ms.p95) ms", (Format-LowerAdvantage $rustshot.workflow_ms.p95 $lightshot.workflow_ms.p95 'faster' 'slower'))
+        )
+    $lines.Add('')
+
+    $lines.Add('## Resource usage')
+    $lines.Add('')
+    Add-MarkdownTable $lines `
+        @('Metric', 'Lightshot', 'Rustshot', 'Rustshot difference') `
+        @(
+            @('Private memory', (Format-Mebibytes $lightshot.private_bytes), (Format-Mebibytes $rustshot.private_bytes), (Format-LowerAdvantage $rustshot.private_bytes $lightshot.private_bytes 'lower' 'higher')),
+            @('Working set', (Format-Mebibytes $lightshot.working_set_bytes), (Format-Mebibytes $rustshot.working_set_bytes), (Format-LowerAdvantage $rustshot.working_set_bytes $lightshot.working_set_bytes 'lower' 'higher')),
+            @('Handles', (Format-Integer $lightshot.handles), (Format-Integer $rustshot.handles), (Format-LowerAdvantage $rustshot.handles $lightshot.handles 'lower' 'higher')),
+            @('GDI objects', (Format-Integer $lightshot.gdi_objects), (Format-Integer $rustshot.gdi_objects), (Format-LowerAdvantage $rustshot.gdi_objects $lightshot.gdi_objects 'lower' 'higher')),
+            @('USER objects', (Format-Integer $lightshot.user_objects), (Format-Integer $rustshot.user_objects), (Format-LowerAdvantage $rustshot.user_objects $lightshot.user_objects 'lower' 'higher')),
+            @('Executable size', (Format-Mebibytes $lightshot.binary_bytes), (Format-Mebibytes $rustshot.binary_bytes), (Format-SizeDifference $rustshot.binary_bytes $lightshot.binary_bytes))
+        )
+    $lines.Add('')
+}
+else {
+    $lines.Add('## Application summary')
+    $lines.Add('')
+    $rows = foreach ($application in $applications) {
+        $row = @(
+            $application.application,
+            $application.version,
+            "$(Format-Number $application.activation_ms.median) ms",
+            "$(Format-Number $application.workflow_ms.median) ms",
+            (Format-Mebibytes $application.private_bytes),
+            "$(Format-Number $application.success_rate_percent)%"
+        )
+        Write-Output -NoEnumerate $row
+    }
+    Add-MarkdownTable $lines `
+        @('Application', 'Version', 'Activation median', 'Workflow median', 'Private memory', 'Success') `
+        @($rows)
+    $lines.Add('')
+}
+
+$lines.Add('## Reliability and correctness')
+$lines.Add('')
+$reliabilityRows = foreach ($application in $applications) {
+    $stats = Get-TrialStats $trials $application.application
+    $row = @(
+        $application.application,
+        $stats.Measured,
+        $stats.Successful,
+        $stats.Failed,
+        $stats.DimensionFailures,
+        $stats.PixelFailures
+    )
+    Write-Output -NoEnumerate $row
+}
+Add-MarkdownTable $lines `
+    @('Application', 'Measured trials', 'Successful', 'Failed', 'Dimension failures', 'Pixel failures') `
+    @($reliabilityRows)
+$lines.Add('')
+
+$lines.Add('## Run environment')
+$lines.Add('')
+$targetOrder = @($summary.environment.target_order) -join ' -> '
+Add-MarkdownTable $lines `
+    @('Property', 'Value') `
+    @(
+        @('Operating system', $summary.environment.os),
+        @('PowerShell', $summary.environment.powershell),
+        @('Logical processors', $summary.environment.logical_processors),
+        @('Measured iterations', $summary.environment.iterations),
+        @('Warmup iterations', $summary.environment.warmup_iterations),
+        @('Target order', $targetOrder),
+        @('Resource settling period', "$($summary.environment.settle_seconds) s"),
+        @('Resource sample duration', "$($summary.environment.resource_sample_milliseconds) ms")
+    )
+$lines.Add('')
+
+$lines.Add('## Application versions')
+$lines.Add('')
+$versionRows = foreach ($application in $applications) {
+    $executableName = [System.IO.Path]::GetFileName([string]$application.executable)
+    $row = @($application.application, $application.version, "``$executableName``")
+    Write-Output -NoEnumerate $row
+}
+Add-MarkdownTable $lines @('Application', 'Version', 'Executable') @($versionRows)
+$lines.Add('')
+
+$lines.Add('## Interpretation notes')
+$lines.Add('')
+$lines.Add('- Activation latency is the cleanest comparable capture-speed metric: hotkey injection until the overlay becomes visible.')
+$lines.Add('- Workflow latency includes identical fixed overlay, selection, and mouse-drag delays used by the automation.')
+$lines.Add('- Lightshot is copied through its visible toolbar button because its keyboard copy handler does not reliably accept synthetic input.')
+$lines.Add('- Lower latency and resource values are better. Executable size is reported separately and is not a speed measurement.')
+$lines.Add('- Results describe this machine and run configuration; compare several complete runs before drawing broader conclusions.')
+$lines.Add('')
+
+$rawLines = [System.Collections.Generic.List[string]]::new()
+$rawLines.AddRange([string[]]$lines)
+$rawLines.Add('## Raw artifacts')
+$rawLines.Add('')
+$rawLines.Add('- [JSON summary](summary.json)')
+$rawLines.Add('- [Per-trial CSV](trials.csv)')
+if (Test-Path -LiteralPath $processPath -PathType Leaf) {
+    $rawLines.Add('- [Process resource CSV](process.csv)')
+}
+$rawLines.Add('')
+
+$parent = Split-Path -Parent $OutputPath
+if ($parent) {
+    New-Item -ItemType Directory -Path $parent -Force | Out-Null
+}
+$rawLines | Set-Content -LiteralPath $OutputPath -Encoding UTF8
+$writtenPaths = [System.Collections.Generic.List[string]]::new()
+$writtenPaths.Add($OutputPath)
+
+if (!$SkipPublicCopy) {
+    if ([string]::IsNullOrWhiteSpace($PublicReportsDirectory)) {
+        $PublicReportsDirectory = Join-Path $benchmarkRoot 'reports'
+    }
+    elseif (![System.IO.Path]::IsPathRooted($PublicReportsDirectory)) {
+        $PublicReportsDirectory = Join-Path $repositoryRoot $PublicReportsDirectory
+    }
+    $PublicReportsDirectory = [System.IO.Path]::GetFullPath($PublicReportsDirectory)
+    New-Item -ItemType Directory -Path $PublicReportsDirectory -Force | Out-Null
+
+    $publicPath = Join-Path $PublicReportsDirectory (Get-PublicReportName $summary.environment.timestamp)
+    $publicLines = [System.Collections.Generic.List[string]]::new()
+    $publicLines.AddRange([string[]]$lines)
+    $publicLines.Add('## Data availability')
+    $publicLines.Add('')
+    $publicLines.Add('This shareable report contains the aggregate results and validation counts needed to interpret the run.')
+    $publicLines.Add('Raw CSV and JSON files are intentionally not committed because they can contain machine-specific paths and identifiers.')
+    $publicLines | Set-Content -LiteralPath $publicPath -Encoding UTF8
+    Write-PublicReportIndex $PublicReportsDirectory
+    $writtenPaths.Add($publicPath)
+}
+
+Write-Output $writtenPaths

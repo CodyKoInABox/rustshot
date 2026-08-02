@@ -141,7 +141,8 @@ native release checklist.
 The interactive Windows harness in [benchmarks/README.md](benchmarks/README.md) automates a
 black-box Rustshot-versus-Lightshot comparison. It measures cold readiness, warm overlay latency,
 copy completion, idle resources, reliability, and captured-pixel correctness, with CSV and JSON
-output for repeatable runs.
+output for repeatable runs. Shareable Markdown results are available in the
+[published benchmark reports](benchmarks/reports/README.md).
 
 ## License
 

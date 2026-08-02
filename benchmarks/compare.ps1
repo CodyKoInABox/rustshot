@@ -39,6 +39,7 @@ param(
 
     [switch] $SkipBuild,
     [switch] $RestartRunningApps,
+    [switch] $SkipPublicReport,
     [switch] $ValidateOnly
 )
 
@@ -766,6 +767,11 @@ $report = [ordered]@{
     errors = @($runErrors)
 }
 $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $summaryPath -Encoding UTF8
+$reportParameters = @{ ResultsDirectory = $OutputDirectory }
+if ($SkipPublicReport) {
+    $reportParameters.SkipPublicCopy = $true
+}
+$markdownReportPaths = @(& (Join-Path $benchmarkRoot 'report.ps1') @reportParameters)
 
 Write-Step 'Benchmark summary'
 $summaries | ForEach-Object {
@@ -783,6 +789,9 @@ Write-Host "Results written to: $OutputDirectory" -ForegroundColor Green
 Write-Host "  $summaryPath"
 Write-Host "  $trialsPath"
 Write-Host "  $processPath"
+foreach ($markdownReportPath in $markdownReportPaths) {
+    Write-Host "  $markdownReportPath"
+}
 $measuredFailures = @($trialRows | Where-Object { !$_.warmup -and !$_.success })
 if ($runErrors.Count -or $measuredFailures.Count) {
     throw "The benchmark completed with $($runErrors.Count) application error(s) and $($measuredFailures.Count) failed measured trial(s). Inspect summary.json and trials.csv."

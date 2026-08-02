@@ -33,6 +33,24 @@ Results are written under `benchmarks/results/<timestamp>/`:
 - `summary.json` contains environment details and median/p95 application summaries.
 - `trials.csv` contains every warmup and measured iteration, including failures and pixel checks.
 - `process.csv` contains cold readiness and the idle resource sample.
+- `report.md` is a shareable Markdown report with highlights, comparison tables, percentage
+  differences, reliability, methodology notes, and links to the raw artifacts.
+
+Every new benchmark also writes a sanitized, commit-ready copy to `benchmarks/reports/<timestamp>.md`
+and refreshes [the public report index](reports/README.md). Raw result folders remain ignored so
+machine names and user-specific executable paths are not accidentally published.
+
+To add an existing result to the public report directory, run:
+
+```powershell
+.\benchmarks\report.ps1 `
+  -ResultsDirectory .\benchmarks\results\20260802-111818
+```
+
+When `-ResultsDirectory` is omitted, `report.ps1` uses the newest folder under
+`benchmarks/results`. Pass `-OutputPath comparison.md` to choose a different filename inside that
+result folder. Pass `-SkipPublicCopy` if you only want the local report. Full benchmark runs publish
+a commit-ready copy by default; pass `-SkipPublicReport` to `compare.ps1` for disposable smoke runs.
 
 ## Useful commands
 
