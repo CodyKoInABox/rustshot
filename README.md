@@ -6,6 +6,15 @@ like Lightshot while staying responsive, native, and inexpensive when it is wait
 > [!NOTE]
 > Rustshot is under active development. The `main` branch currently targets the first usable MVP.
 
+## Current Benchmark against Lightshot
+==> Benchmark summary
+
+Application Success Activation median Activation p95 Workflow median Private memory
+----------- ------- ----------------- -------------- --------------- --------------
+Lightshot   100,0%  94,46 ms          100,24 ms      1.716,27 ms     20,9 MiB      
+Rustshot    100,0%  51,49 ms          62,86 ms       1.500,89 ms     2,8 MiB  
+
+
 ## Features
 
 - Two independent system-wide shortcuts:
@@ -126,6 +135,13 @@ the native pointer is included in captured pixels.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for module boundaries and [TESTING.md](TESTING.md) for the
 native release checklist.
+
+## Performance benchmark
+
+The interactive Windows harness in [benchmarks/README.md](benchmarks/README.md) automates a
+black-box Rustshot-versus-Lightshot comparison. It measures cold readiness, warm overlay latency,
+copy completion, idle resources, reliability, and captured-pixel correctness, with CSV and JSON
+output for repeatable runs.
 
 ## License
 
