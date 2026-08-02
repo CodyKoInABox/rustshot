@@ -1,0 +1,70 @@
+// Keep this resource self-contained. Some Rust-only Windows toolchains provide
+// rc.exe without configuring the Windows SDK include directory for windows.h.
+#define DS_SETFONT        0x0040L
+#define DS_MODALFRAME     0x0080L
+#define DS_CENTER         0x0800L
+#define WS_POPUP          0x80000000L
+#define WS_CAPTION        0x00C00000L
+#define WS_SYSMENU        0x00080000L
+#define WS_TABSTOP        0x00010000L
+#define WS_VSCROLL        0x00200000L
+#define WS_EX_APPWINDOW   0x00040000L
+#define ES_AUTOHSCROLL    0x0080L
+#define ES_READONLY       0x0800L
+#define ES_NUMBER         0x2000L
+#define CBS_DROPDOWNLIST  0x0003L
+#define BS_AUTOCHECKBOX   0x0003L
+#define IDOK              1
+#define IDCANCEL          2
+
+#define IDD_SETTINGS             101
+#define IDC_FULLSCREEN_SHORTCUT  1001
+#define IDC_REGION_SHORTCUT      1002
+#define IDC_AUTOSAVE_DIRECTORY   1003
+#define IDC_BROWSE_DIRECTORY     1004
+#define IDC_IMAGE_FORMAT         1005
+#define IDC_JPEG_QUALITY         1006
+#define IDC_PNG_COMPRESSION      1007
+#define IDC_MONITOR_SCOPE        1008
+#define IDC_INCLUDE_CURSOR       1009
+#define IDC_RESTORE_DEFAULTS     1010
+#define IDC_SETTINGS_STATUS      1011
+#define IDC_JPEG_QUALITY_LABEL   1012
+#define IDC_PNG_COMPRESSION_LABEL 1013
+#define IDC_PNG_HELP             1014
+
+IDD_SETTINGS DIALOGEX 0, 0, 430, 298
+STYLE DS_SETFONT | DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "Rustshot Settings"
+FONT 9, "Segoe UI"
+BEGIN
+    GROUPBOX        "Keyboard shortcuts", -1, 8, 7, 414, 77
+    LTEXT           "Full-screen &autosave:", -1, 18, 24, 102, 10
+    EDITTEXT        IDC_FULLSCREEN_SHORTCUT, 126, 21, 282, 14, ES_AUTOHSCROLL | ES_READONLY | WS_TABSTOP
+    LTEXT           "&Region selection:", -1, 18, 48, 102, 10
+    EDITTEXT        IDC_REGION_SHORTCUT, 126, 45, 282, 14, ES_AUTOHSCROLL | ES_READONLY | WS_TABSTOP
+    LTEXT           "Select a field, hold the keys together, then release. Tab moves between controls.", -1, 126, 66, 282, 10
+
+    GROUPBOX        "Saving and image quality", -1, 8, 90, 414, 113
+    LTEXT           "Autosave &folder:", -1, 18, 108, 102, 10
+    EDITTEXT        IDC_AUTOSAVE_DIRECTORY, 126, 105, 221, 14, ES_AUTOHSCROLL | WS_TABSTOP
+    PUSHBUTTON      "&Browse...", IDC_BROWSE_DIRECTORY, 353, 104, 55, 16, WS_TABSTOP
+    LTEXT           "&Image format:", -1, 18, 132, 102, 10
+    COMBOBOX        IDC_IMAGE_FORMAT, 126, 129, 104, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "&JPEG quality (1-100):", IDC_JPEG_QUALITY_LABEL, 245, 132, 104, 10
+    EDITTEXT        IDC_JPEG_QUALITY, 353, 129, 55, 14, ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "&PNG compression:", IDC_PNG_COMPRESSION_LABEL, 18, 158, 102, 10
+    COMBOBOX        IDC_PNG_COMPRESSION, 126, 155, 104, 80, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    LTEXT           "PNG is lossless; compression changes encoding speed and file size.", IDC_PNG_HELP, 126, 181, 282, 10
+
+    GROUPBOX        "Capture", -1, 8, 209, 414, 51
+    LTEXT           "Full-screen sc&ope:", -1, 18, 228, 102, 10
+    COMBOBOX        IDC_MONITOR_SCOPE, 126, 225, 143, 70, CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP
+    CONTROL         "Include mouse c&ursor", IDC_INCLUDE_CURSOR, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 285, 226, 123, 12
+
+    PUSHBUTTON      "Restore &defaults", IDC_RESTORE_DEFAULTS, 8, 272, 82, 18, WS_TABSTOP
+    LTEXT           "", IDC_SETTINGS_STATUS, 99, 276, 188, 10
+    DEFPUSHBUTTON   "&Save", IDOK, 297, 272, 58, 18, WS_TABSTOP
+    PUSHBUTTON      "&Cancel", IDCANCEL, 364, 272, 58, 18, WS_TABSTOP
+END

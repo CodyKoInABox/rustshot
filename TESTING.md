@@ -7,10 +7,30 @@ cannot be validated reliably by headless CI.
 ## Startup and configuration
 
 - Start `rustshot.exe`; verify there is one tray icon and no console or taskbar window.
-- Open settings from the tray, change both shortcuts, and reload. Verify old shortcuts stop working.
-- Try duplicate or already-reserved shortcuts. Verify Rustshot reports the error and keeps the
-  previous pair active.
-- Verify JPEG qualities `1` and `100`, and PNG compression values `fast`, `default`, and `best`.
+- Open **Settings...** from the tray and verify a single native window appears with the saved values
+  for both shortcuts, autosave folder, image format, JPEG quality, PNG compression, full-screen
+  scope, and cursor inclusion. Launch once with `rustshot.exe --settings` and verify the same window.
+- Open Settings a second time while it is already visible. Verify Rustshot focuses the existing
+  window instead of creating another one, and verify capture shortcuts do nothing until it closes.
+- Change a field and choose **Cancel** or press Escape. Decline and then accept the discard prompt;
+  verify the active and persisted settings did not change.
+- Choose **Restore defaults**, verify it changes only the draft, then cancel. Repeat and save to
+  confirm all defaults are applied.
+- Use **Browse...** with a folder containing spaces and non-ASCII characters. Save, restart
+  Rustshot, and verify the exact path and every other field round-trip.
+- Focus each shortcut field, press a new combination, and verify the displayed value is replaced
+  rather than typed character-by-character. Confirm modifier-only presses do not replace it, Tab
+  and Shift+Tab still navigate, and combinations using Ctrl, Shift, Alt, and the Windows key record.
+  In particular, hold Ctrl+Shift+Backspace and verify all three keys appear in the recorded shortcut.
+- Save both shortcuts. Verify the old shortcuts stop working immediately and the new shortcuts work
+  without restarting.
+- Try invalid, duplicate, and already-reserved shortcuts. Verify the window reports the error,
+  retains the draft, and keeps the previous shortcut pair active.
+- Select PNG and verify JPEG quality is disabled; select JPEG and verify PNG compression is
+  disabled. Verify JPEG qualities `1` and `100`, and all three PNG compression choices.
+- Verify invalid JPEG values (`0`, `101`, and blank) are rejected without closing the window.
+- Move the settings window between displays with different scale factors and operate every control
+  using only Tab, Shift+Tab, arrow keys, Space, Enter, and Escape.
 
 ## Immediate capture
 
@@ -36,4 +56,3 @@ cannot be validated reliably by headless CI.
 - Copy, then paste into Paint and an Office application. Verify dimensions, colors, and alpha.
 - Open Print, cancel, retry, and print to both Microsoft Print to PDF and one physical driver. Verify
   aspect-fit placement and no cropped edges.
-

@@ -35,13 +35,15 @@ use winit::{
     window::WindowId,
 };
 
-use crate::overlay::{Overlay, OverlayOutcome};
+use crate::{
+    overlay::{Overlay, OverlayOutcome},
+    settings::{run_settings_dialog, SettingsResponder, SettingsWindowHandle},
+};
 
 const MENU_CAPTURE_REGION: &str = "capture-region";
 const MENU_CAPTURE_FULLSCREEN: &str = "capture-fullscreen";
 const MENU_OPEN_SCREENSHOTS: &str = "open-screenshots";
 const MENU_OPEN_SETTINGS: &str = "open-settings";
-const MENU_RELOAD_SETTINGS: &str = "reload-settings";
 const MENU_QUIT: &str = "quit";
 
 #[derive(Clone, Copy)]
@@ -71,6 +73,15 @@ enum AppEvent {
     PrintFinished {
         result: Result<PrintOutcome, String>,
     },
+    SettingsApply {
+        session_id: u64,
+        config: Config,
+        responder: SettingsResponder,
+    },
+    SettingsClosed {
+        session_id: u64,
+        result: Result<(), String>,
+    },
 }
 
 pub fn run() -> Result<()> {
@@ -80,7 +91,10 @@ pub fn run() -> Result<()> {
     wire_event_sources(&event_loop.create_proxy());
 
     let config = load_initial_config();
-    let mut app = RustshotApp::new(event_loop.create_proxy(), config);
+    let open_settings_on_start = std::env::args_os()
+        .skip(1)
+        .any(|argument| argument == "--settings");
+    let mut app = RustshotApp::new(event_loop.create_proxy(), config, open_settings_on_start);
     event_loop
         .run_app(&mut app)
         .context("Rustshot's event loop stopped unexpectedly")
@@ -116,11 +130,18 @@ fn load_initial_config() -> Config {
         Err(error) => {
             show_error(
                 "Could not load settings",
-                &format!("{error}\n\nRustshot will use safe defaults until settings are reloaded."),
+                &format!(
+                    "{error}\n\nRustshot will use safe defaults. Open Settings to repair the configuration."
+                ),
             );
             Config::default()
         }
     }
+}
+
+struct SettingsSession {
+    id: u64,
+    window: SettingsWindowHandle,
 }
 
 struct RustshotApp {
@@ -129,17 +150,23 @@ struct RustshotApp {
     hotkeys: Option<RegisteredHotkeys>,
     tray: Option<TrayIcon>,
     overlay: Option<Overlay>,
+    settings_window: Option<SettingsSession>,
+    next_settings_session_id: u64,
+    open_settings_on_start: bool,
     busy: bool,
 }
 
 impl RustshotApp {
-    fn new(proxy: EventLoopProxy<AppEvent>, config: Config) -> Self {
+    fn new(proxy: EventLoopProxy<AppEvent>, config: Config, open_settings_on_start: bool) -> Self {
         Self {
             proxy,
             config,
             hotkeys: None,
             tray: None,
             overlay: None,
+            settings_window: None,
+            next_settings_session_id: 1,
+            open_settings_on_start,
             busy: false,
         }
     }
@@ -162,10 +189,14 @@ impl RustshotApp {
                 ),
             }
         }
+        if self.open_settings_on_start {
+            self.open_settings_on_start = false;
+            self.open_settings_window();
+        }
     }
 
     fn start_capture(&mut self, kind: CaptureKind) {
-        if self.busy || self.overlay.is_some() {
+        if self.busy || self.overlay.is_some() || self.settings_window.is_some() {
             return;
         }
         let scope = self.config.monitor_scope;
@@ -363,17 +394,12 @@ impl RustshotApp {
                     show_error("Could not open screenshot folder", &error.to_string());
                 }
             }
-            MENU_OPEN_SETTINGS => {
-                if let Err(error) = open_settings(&self.config) {
-                    show_error("Could not open settings", &error.to_string());
-                }
-            }
-            MENU_RELOAD_SETTINGS => self.reload_settings(),
+            MENU_OPEN_SETTINGS => self.open_settings_window(),
             MENU_QUIT => {
-                if self.busy {
+                if self.busy || self.settings_window.is_some() {
                     show_error(
                         "Rustshot is busy",
-                        "Finish or cancel the current capture, save, or print operation before quitting.",
+                        "Finish or cancel the current capture, settings, save, or print operation before quitting.",
                     );
                 } else {
                     event_loop.exit();
@@ -383,30 +409,157 @@ impl RustshotApp {
         }
     }
 
-    fn reload_settings(&mut self) {
-        let new_config = match Config::load() {
-            Ok(config) => config,
-            Err(error) => {
-                show_error("Could not reload settings", &error.to_string());
-                return;
-            }
-        };
-        let replacement = if let Some(hotkeys) = &mut self.hotkeys {
-            hotkeys.replace(&new_config)
-        } else {
-            RegisteredHotkeys::new(&new_config).map(|hotkeys| {
-                self.hotkeys = Some(hotkeys);
-            })
-        };
-        if let Err(error) = replacement {
+    fn open_settings_window(&mut self) {
+        if let Some(session) = &self.settings_window {
+            session.window.focus();
+            return;
+        }
+        if self.busy || self.overlay.is_some() {
             show_error(
-                "Could not register new shortcuts",
-                &format!("{error}\n\nRustshot tried to restore the previous shortcuts."),
+                "Rustshot is busy",
+                "Finish or cancel the current capture, save, or print operation before opening settings.",
             );
             return;
         }
-        self.config = new_config;
+
+        let window_handle = SettingsWindowHandle::new();
+        let session_id = self.next_settings_session_id;
+        self.next_settings_session_id = self.next_settings_session_id.wrapping_add(1);
+        self.settings_window = Some(SettingsSession {
+            id: session_id,
+            window: window_handle.clone(),
+        });
+        let config = self.config.clone();
+        let proxy = self.proxy.clone();
+        let spawn_result = thread::Builder::new()
+            .name("rustshot-settings".to_owned())
+            .spawn(move || {
+                let submit_proxy = proxy.clone();
+                let result =
+                    run_settings_dialog(&config, window_handle, move |config, responder| {
+                        if let Err(error) = submit_proxy.send_event(AppEvent::SettingsApply {
+                            session_id,
+                            config,
+                            responder,
+                        }) {
+                            if let AppEvent::SettingsApply { responder, .. } = error.0 {
+                                responder.finish(Err(
+                                    "Rustshot's event loop is no longer available".to_owned(),
+                                ));
+                            }
+                        }
+                    })
+                    .map_err(|error| format!("{error:#}"));
+                let _ = proxy.send_event(AppEvent::SettingsClosed { session_id, result });
+            });
+        if let Err(error) = spawn_result {
+            self.settings_window = None;
+            show_error(
+                "Could not open settings",
+                &format!("Could not start the settings window: {error}"),
+            );
+        }
     }
+
+    fn apply_settings(&mut self, new_config: Config) -> Result<()> {
+        let previous_config = self.config.clone();
+        let committed_config = commit_settings(self, &previous_config, new_config)?;
+        self.config = committed_config;
+        Ok(())
+    }
+
+    fn restore_hotkeys(&mut self, config: &Config, should_be_registered: bool) -> Result<()> {
+        if !should_be_registered {
+            self.hotkeys = None;
+            return Ok(());
+        }
+
+        let replacement_error = self
+            .hotkeys
+            .as_mut()
+            .and_then(|hotkeys| hotkeys.replace(config).err());
+        if replacement_error.is_none() && self.hotkeys.is_some() {
+            return Ok(());
+        }
+
+        self.hotkeys = None;
+        match RegisteredHotkeys::new(config) {
+            Ok(hotkeys) => {
+                self.hotkeys = Some(hotkeys);
+                Ok(())
+            }
+            Err(recreate_error) => match replacement_error {
+                Some(replacement_error) => Err(anyhow::anyhow!(
+                    "shortcut rollback failed ({replacement_error}); recreating the previous shortcuts also failed ({recreate_error})"
+                )),
+                None => Err(recreate_error).context("could not recreate the previous shortcuts"),
+            },
+        }
+    }
+}
+
+trait SettingsCommitBackend {
+    fn shortcuts_registered(&self) -> bool;
+    fn activate_shortcuts(&mut self, config: &Config) -> Result<()>;
+    fn persist_settings(&mut self, config: &Config) -> Result<()>;
+    fn restore_shortcuts(&mut self, config: &Config, should_be_registered: bool) -> Result<()>;
+}
+
+impl SettingsCommitBackend for RustshotApp {
+    fn shortcuts_registered(&self) -> bool {
+        self.hotkeys
+            .as_ref()
+            .is_some_and(|hotkeys| hotkeys.registered)
+    }
+
+    fn activate_shortcuts(&mut self, config: &Config) -> Result<()> {
+        if let Some(hotkeys) = self.hotkeys.as_mut() {
+            hotkeys.replace(config)
+        } else {
+            self.hotkeys = Some(RegisteredHotkeys::new(config)?);
+            Ok(())
+        }
+    }
+
+    fn persist_settings(&mut self, config: &Config) -> Result<()> {
+        config.save().map_err(anyhow::Error::new)
+    }
+
+    fn restore_shortcuts(&mut self, config: &Config, should_be_registered: bool) -> Result<()> {
+        self.restore_hotkeys(config, should_be_registered)
+    }
+}
+
+fn commit_settings(
+    backend: &mut impl SettingsCommitBackend,
+    previous_config: &Config,
+    new_config: Config,
+) -> Result<Config> {
+    new_config.validate().context("settings are invalid")?;
+    let previous_shortcuts_registered = backend.shortcuts_registered();
+
+    if let Err(apply_error) = backend.activate_shortcuts(&new_config) {
+        return match backend.restore_shortcuts(previous_config, previous_shortcuts_registered) {
+            Ok(()) => Err(apply_error).context(
+                "could not activate the new shortcuts; the previous shortcut state was restored",
+            ),
+            Err(rollback_error) => Err(anyhow::anyhow!(
+                "could not activate the new shortcuts ({apply_error}); restoring the previous shortcut state also failed ({rollback_error})"
+            )),
+        };
+    }
+
+    if let Err(save_error) = backend.persist_settings(&new_config) {
+        return match backend.restore_shortcuts(previous_config, previous_shortcuts_registered) {
+            Ok(()) => Err(save_error)
+                .context("could not save settings; the previous shortcut state was restored"),
+            Err(rollback_error) => Err(anyhow::anyhow!(
+                "could not save settings ({save_error}); restoring the previous shortcut state also failed ({rollback_error})"
+            )),
+        };
+    }
+
+    Ok(new_config)
 }
 
 impl ApplicationHandler<AppEvent> for RustshotApp {
@@ -467,6 +620,34 @@ impl ApplicationHandler<AppEvent> for RustshotApp {
                     self.set_overlay_visible(true);
                 }
             },
+            AppEvent::SettingsApply {
+                session_id,
+                config,
+                responder,
+            } => {
+                if self
+                    .settings_window
+                    .as_ref()
+                    .is_some_and(|session| session.id == session_id)
+                {
+                    responder.finish(
+                        self.apply_settings(config)
+                            .map_err(|error| format!("{error:#}")),
+                    );
+                }
+            }
+            AppEvent::SettingsClosed { session_id, result } => {
+                if self
+                    .settings_window
+                    .as_ref()
+                    .is_some_and(|session| session.id == session_id)
+                {
+                    self.settings_window = None;
+                    if let Err(error) = result {
+                        show_error("Settings window failed", &error);
+                    }
+                }
+            }
         }
     }
 
@@ -575,8 +756,7 @@ fn build_tray_icon() -> Result<TrayIcon> {
     let fullscreen = MenuItem::with_id(MENU_CAPTURE_FULLSCREEN, "Capture &full screen", true, None);
     let screenshots =
         MenuItem::with_id(MENU_OPEN_SCREENSHOTS, "Open screenshot &folder", true, None);
-    let settings = MenuItem::with_id(MENU_OPEN_SETTINGS, "Open &settings", true, None);
-    let reload = MenuItem::with_id(MENU_RELOAD_SETTINGS, "&Reload settings", true, None);
+    let settings = MenuItem::with_id(MENU_OPEN_SETTINGS, "&Settings...", true, None);
     let separator = PredefinedMenuItem::separator();
     let quit = MenuItem::with_id(MENU_QUIT, "&Quit Rustshot", true, None);
     menu.append_items(&[
@@ -585,7 +765,6 @@ fn build_tray_icon() -> Result<TrayIcon> {
         &separator,
         &screenshots,
         &settings,
-        &reload,
         &quit,
     ])?;
 
@@ -657,20 +836,6 @@ fn ensure_extension(mut path: PathBuf, extension: &str) -> PathBuf {
     path
 }
 
-fn open_settings(config: &Config) -> Result<()> {
-    let path = config_path().context("could not determine the settings path")?;
-    if !path.exists() {
-        config
-            .save()
-            .context("could not create the settings file")?;
-    }
-    Command::new("notepad.exe")
-        .arg(&path)
-        .spawn()
-        .with_context(|| format!("could not open `{}`", path.display()))?;
-    Ok(())
-}
-
 fn open_path(path: &Path) -> Result<()> {
     std::fs::create_dir_all(path)
         .with_context(|| format!("could not create `{}`", path.display()))?;
@@ -691,8 +856,57 @@ fn show_error(title: &str, description: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::ensure_extension;
+    use super::{commit_settings, ensure_extension, SettingsCommitBackend};
+    use anyhow::{bail, Result};
+    use rustshot::config::Config;
     use std::path::PathBuf;
+
+    #[derive(Default)]
+    struct FakeSettingsBackend {
+        registered: bool,
+        fail_activate: bool,
+        fail_persist: bool,
+        fail_restore: bool,
+        operations: Vec<&'static str>,
+        restored_registration_state: Option<bool>,
+    }
+
+    impl SettingsCommitBackend for FakeSettingsBackend {
+        fn shortcuts_registered(&self) -> bool {
+            self.registered
+        }
+
+        fn activate_shortcuts(&mut self, _config: &Config) -> Result<()> {
+            self.operations.push("activate");
+            if self.fail_activate {
+                bail!("activation failed");
+            }
+            self.registered = true;
+            Ok(())
+        }
+
+        fn persist_settings(&mut self, _config: &Config) -> Result<()> {
+            self.operations.push("persist");
+            if self.fail_persist {
+                bail!("persistence failed");
+            }
+            Ok(())
+        }
+
+        fn restore_shortcuts(
+            &mut self,
+            _config: &Config,
+            should_be_registered: bool,
+        ) -> Result<()> {
+            self.operations.push("restore");
+            self.restored_registration_state = Some(should_be_registered);
+            if self.fail_restore {
+                bail!("rollback failed");
+            }
+            self.registered = should_be_registered;
+            Ok(())
+        }
+    }
 
     #[test]
     fn save_extension_matches_the_selected_encoder() {
@@ -708,5 +922,89 @@ mod tests {
             ensure_extension(PathBuf::from("capture.PNG"), "png"),
             PathBuf::from("capture.PNG")
         );
+    }
+
+    #[test]
+    fn settings_commit_validates_before_side_effects() {
+        let previous = Config::default();
+        let mut invalid = previous.clone();
+        invalid.jpeg_quality = 0;
+        let mut backend = FakeSettingsBackend::default();
+
+        assert!(commit_settings(&mut backend, &previous, invalid).is_err());
+        assert!(backend.operations.is_empty());
+    }
+
+    #[test]
+    fn settings_commit_activates_then_persists() {
+        let previous = Config::default();
+        let mut candidate = previous.clone();
+        candidate.jpeg_quality = 77;
+        let mut backend = FakeSettingsBackend {
+            registered: true,
+            ..Default::default()
+        };
+
+        let committed = commit_settings(&mut backend, &previous, candidate.clone())
+            .expect("valid settings should commit");
+
+        assert_eq!(committed, candidate);
+        assert_eq!(backend.operations, ["activate", "persist"]);
+    }
+
+    #[test]
+    fn activation_failure_restores_previous_shortcuts() {
+        let previous = Config::default();
+        let mut backend = FakeSettingsBackend {
+            registered: true,
+            fail_activate: true,
+            ..Default::default()
+        };
+
+        let error = commit_settings(&mut backend, &previous, previous.clone())
+            .expect_err("activation failure should abort");
+
+        assert_eq!(backend.operations, ["activate", "restore"]);
+        assert_eq!(backend.restored_registration_state, Some(true));
+        assert!(error
+            .to_string()
+            .contains("previous shortcut state was restored"));
+    }
+
+    #[test]
+    fn persistence_failure_restores_an_initially_unregistered_state() {
+        let previous = Config::default();
+        let mut backend = FakeSettingsBackend {
+            fail_persist: true,
+            ..Default::default()
+        };
+
+        let error = commit_settings(&mut backend, &previous, previous.clone())
+            .expect_err("persistence failure should abort");
+
+        assert_eq!(backend.operations, ["activate", "persist", "restore"]);
+        assert_eq!(backend.restored_registration_state, Some(false));
+        assert!(!backend.registered);
+        assert!(error
+            .to_string()
+            .contains("previous shortcut state was restored"));
+    }
+
+    #[test]
+    fn rollback_failure_is_reported_with_the_original_failure() {
+        let previous = Config::default();
+        let mut backend = FakeSettingsBackend {
+            registered: true,
+            fail_persist: true,
+            fail_restore: true,
+            ..Default::default()
+        };
+
+        let error = commit_settings(&mut backend, &previous, previous.clone())
+            .expect_err("double failure should abort");
+        let description = error.to_string();
+
+        assert!(description.contains("persistence failed"));
+        assert!(description.contains("rollback failed"));
     }
 }

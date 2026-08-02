@@ -17,8 +17,10 @@ Idle
 ```
 
 The winit event-loop thread owns the tray icon, global-hotkey registration, Save As dialog, and
-overlay window. Screen capture, encoding, and printer selection/spooling run on workers. The app
-ignores repeated capture shortcuts until the current capture session ends.
+overlay window. Screen capture, encoding, and printer selection/spooling run on workers. The native
+settings dialog has its own UI thread and submits validated candidates back to the event loop;
+hotkey replacement and atomic persistence complete there before the dialog reports success. The app
+ignores repeated capture shortcuts until the current capture or settings session ends.
 
 ## Modules
 
@@ -30,6 +32,7 @@ ignores repeated capture shortcuts until the current capture session ends.
 - `platform/windows/clipboard`: a lossless Windows DIB clipboard transfer.
 - `platform/windows/print`: native printer selection and aspect-fit raster printing.
 - `overlay`: the region-selection and annotation interaction state machine.
+- `settings`: the native Windows settings dialog, control validation, and folder-picker bridge.
 - `app`: the tray lifecycle and orchestration layer.
 
 ## Memory model

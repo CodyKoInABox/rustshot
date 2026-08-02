@@ -15,6 +15,8 @@ like Lightshot while staying responsive, native, and inexpensive when it is wait
 - Undo/redo, color, and stroke-width controls.
 - Save As, copy to the Windows clipboard, and native printing.
 - PNG or JPEG output, including JPEG quality and PNG compression settings.
+- A native settings window for shortcuts, autosave location, capture scope, cursor inclusion, and
+  encoder quality.
 - A native tray process and TOML configuration—no browser or webview runtime.
 
 The initial defaults are `Ctrl+Shift+F11` for full-screen autosave and `Ctrl+Shift+F10` for region
@@ -33,9 +35,12 @@ cargo build --release
 .\target\release\rustshot.exe
 ```
 
-Rustshot creates its settings file on first launch under the current user's application
-configuration directory. Choose **Open settings** from the tray menu, edit the TOML file, and then
-choose **Reload settings**.
+Choose **Settings...** from the tray menu to change Rustshot's behavior. **Save** validates the
+whole form, activates both shortcuts, and persists the changes immediately; if Windows rejects a
+shortcut or the file cannot be saved, the previous settings remain active. **Cancel** leaves the
+current settings unchanged. You can also launch `rustshot.exe --settings` to open the same window
+immediately. To change a shortcut, select its field and press the new key combination—Rustshot
+records it for you, so no shortcut syntax needs to be typed.
 
 ## Region editor
 
@@ -52,6 +57,11 @@ Drag to select a region, then use the toolbar or these keyboard shortcuts:
 | `Escape` | Cancel the active stroke, then cancel the capture |
 
 ## Configuration
+
+The settings window manages every supported option, including its native folder picker. Rustshot
+also stores the values as TOML under the current user's application configuration directory. The
+file format below is useful for troubleshooting and tooling, but routine changes do not require
+editing it directly:
 
 ```toml
 fullscreen_shortcut = "Ctrl+Shift+F11"
