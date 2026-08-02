@@ -788,10 +788,17 @@ impl Overlay {
                 );
             }
             let layout = editor.toolbar_layout(width, height, self.window.scale_factor());
-            draw_toolbar(&mut buffer, width, height, editor, layout);
+            draw_toolbar(
+                &mut buffer,
+                width,
+                height,
+                editor,
+                layout,
+                self.hovered_button,
+            );
             draw_shortcut_hints(&mut buffer, width, height);
             if let Some(button) = self.hovered_button {
-                draw_tooltip(&mut buffer, width, height, layout, button.tooltip());
+                draw_tooltip(&mut buffer, width, height, layout, button, button.tooltip());
             }
         } else if let (Some(anchor), Some(cursor)) = (self.selection_anchor, self.selection_cursor)
         {
@@ -1941,6 +1948,7 @@ fn draw_toolbar(
     height: u32,
     editor: &Editor,
     layout: ToolbarLayout,
+    hovered: Option<ToolbarButton>,
 ) {
     let toolbar_width = layout.button_size * layout.columns;
     let toolbar_height = layout.button_size * layout.rows;
@@ -1960,7 +1968,13 @@ fn draw_toolbar(
         let x = layout.x + (index % layout.columns) * layout.button_size;
         let y = layout.y + (index / layout.columns) * layout.button_size;
         let selected = button.tool().is_some_and(|tool| tool == editor.tool);
-        let background = if selected { 0x00_2d74da } else { 0x00_242833 };
+        let background = if selected {
+            0x00_2d74da
+        } else if hovered == Some(button) {
+            0x00_3a4050
+        } else {
+            0x00_242833
+        };
         fill_rect(
             buffer,
             width,
@@ -2000,9 +2014,466 @@ fn draw_toolbar_icon(
     let inset = (size / 4).max(5);
     let left = x + inset;
     let right = x + size - inset;
+    let top = y + inset;
+    let bottom = y + size - inset;
     let white = 0x00ffffff;
+    let icon_color = Color::WHITE;
 
     match button {
+        ToolbarButton::Select => {
+            let tip_x = left;
+            let tip_y = top;
+            draw_line(
+                buffer,
+                width,
+                height,
+                tip_x,
+                tip_y,
+                tip_x + 2,
+                bottom,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                tip_x,
+                tip_y,
+                right,
+                bottom - 5,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                tip_x + 2,
+                bottom,
+                center_x - 1,
+                bottom - 5,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                center_x - 1,
+                bottom - 5,
+                center_x + 4,
+                bottom + 2,
+                white,
+                2,
+            );
+        }
+        ToolbarButton::Pen => {
+            draw_line(
+                buffer,
+                width,
+                height,
+                left + 2,
+                bottom - 2,
+                right - 3,
+                top + 3,
+                white,
+                4,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                left,
+                bottom,
+                left + 5,
+                bottom - 1,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                right - 5,
+                top + 1,
+                right - 1,
+                top + 5,
+                white,
+                2,
+            );
+        }
+        ToolbarButton::Highlighter => {
+            draw_line(
+                buffer,
+                width,
+                height,
+                left + 3,
+                bottom - 4,
+                right - 3,
+                top + 4,
+                white,
+                6,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                left,
+                bottom,
+                left + 7,
+                bottom,
+                white,
+                3,
+            );
+        }
+        ToolbarButton::Line => {
+            draw_line(buffer, width, height, left, bottom, right, top, white, 2);
+        }
+        ToolbarButton::Arrow => {
+            draw_line(
+                buffer,
+                width,
+                height,
+                left,
+                bottom,
+                right - 1,
+                top + 1,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                right - 1,
+                top + 1,
+                right - 8,
+                top + 2,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                right - 1,
+                top + 1,
+                right - 2,
+                top + 8,
+                white,
+                2,
+            );
+        }
+        ToolbarButton::Rectangle => {
+            draw_rect(
+                buffer,
+                width,
+                height,
+                left,
+                top + 2,
+                right - left,
+                bottom - top - 4,
+                white,
+                2,
+            );
+        }
+        ToolbarButton::Ellipse => {
+            draw_ellipse_preview(
+                buffer,
+                width,
+                height,
+                left,
+                top + 1,
+                right,
+                bottom - 1,
+                icon_color,
+                2,
+            );
+        }
+        ToolbarButton::Text => {
+            draw_line(
+                buffer,
+                width,
+                height,
+                left,
+                top + 1,
+                right,
+                top + 1,
+                white,
+                3,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                center_x,
+                top + 1,
+                center_x,
+                bottom,
+                white,
+                3,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                center_x - 5,
+                bottom,
+                center_x + 5,
+                bottom,
+                white,
+                2,
+            );
+        }
+        ToolbarButton::Callout => {
+            draw_rect(
+                buffer,
+                width,
+                height,
+                left,
+                top,
+                right - left,
+                bottom - top - 5,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                left + 6,
+                bottom - 5,
+                left + 4,
+                bottom + 1,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                left + 4,
+                bottom + 1,
+                center_x,
+                bottom - 5,
+                white,
+                2,
+            );
+        }
+        ToolbarButton::Redact => {
+            draw_rect(
+                buffer,
+                width,
+                height,
+                left,
+                top,
+                right - left,
+                bottom - top,
+                white,
+                1,
+            );
+            for bar_y in [top + 4, center_y, bottom - 4] {
+                draw_line(
+                    buffer,
+                    width,
+                    height,
+                    left + 3,
+                    bar_y,
+                    right - 3,
+                    bar_y,
+                    white,
+                    3,
+                );
+            }
+        }
+        ToolbarButton::Pixelate => {
+            let cell = ((right - left - 4) / 3).max(2);
+            for row in 0..3 {
+                for column in 0..3 {
+                    if (row + column) % 2 == 0 || (row == 2 && column == 1) {
+                        fill_rect(
+                            buffer,
+                            width,
+                            height,
+                            left + column * (cell + 2),
+                            top + row * (cell + 2),
+                            cell,
+                            cell,
+                            white,
+                        );
+                    }
+                }
+            }
+        }
+        ToolbarButton::Eraser => {
+            let points = [
+                (left + 1, center_y + 4),
+                (center_x + 2, top),
+                (right, center_y - 1),
+                (center_x - 3, bottom),
+            ];
+            for index in 0..points.len() {
+                let start = points[index];
+                let end = points[(index + 1) % points.len()];
+                draw_line(
+                    buffer, width, height, start.0, start.1, end.0, end.1, white, 2,
+                );
+            }
+            draw_line(
+                buffer,
+                width,
+                height,
+                left + 4,
+                center_y + 1,
+                center_x,
+                bottom - 3,
+                white,
+                2,
+            );
+        }
+        ToolbarButton::Crop => {
+            draw_line(
+                buffer,
+                width,
+                height,
+                left + 4,
+                top,
+                left + 4,
+                bottom - 4,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                left,
+                top + 4,
+                right - 4,
+                top + 4,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                right - 4,
+                top + 4,
+                right - 4,
+                bottom,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                left + 4,
+                bottom - 4,
+                right,
+                bottom - 4,
+                white,
+                2,
+            );
+        }
+        ToolbarButton::Eyedropper => {
+            draw_line(
+                buffer,
+                width,
+                height,
+                left + 3,
+                bottom - 2,
+                right - 5,
+                top + 6,
+                white,
+                3,
+            );
+            draw_ellipse_preview(
+                buffer,
+                width,
+                height,
+                right - 8,
+                top,
+                right,
+                top + 8,
+                icon_color,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                left,
+                bottom,
+                left + 5,
+                bottom - 2,
+                white,
+                2,
+            );
+        }
+        ToolbarButton::Undo | ToolbarButton::Redo => {
+            let undo = button == ToolbarButton::Undo;
+            let start_x = if undo { right } else { left };
+            let bend_x = if undo { left + 5 } else { right - 5 };
+            let arrow_x = if undo { left } else { right };
+            draw_line(
+                buffer,
+                width,
+                height,
+                start_x,
+                bottom - 2,
+                start_x,
+                center_y,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                start_x,
+                center_y,
+                bend_x,
+                top + 3,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                bend_x,
+                top + 3,
+                arrow_x,
+                center_y - 2,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                arrow_x,
+                center_y - 2,
+                arrow_x + if undo { 6 } else { -6 },
+                center_y - 7,
+                white,
+                2,
+            );
+            draw_line(
+                buffer,
+                width,
+                height,
+                arrow_x,
+                center_y - 2,
+                arrow_x + if undo { 7 } else { -7 },
+                center_y + 1,
+                white,
+                2,
+            );
+        }
         ToolbarButton::Color => {
             let color = editor.color;
             let value = (u32::from(color.red()) << 16)
@@ -2038,42 +2509,96 @@ fn draw_toolbar_icon(
                 buffer, width, height, left, center_y, right, center_y, white, thickness,
             );
         }
-        _ => {
-            let label = match button {
-                ToolbarButton::Select => "V",
-                ToolbarButton::Pen => "P",
-                ToolbarButton::Highlighter => "H",
-                ToolbarButton::Line => "L",
-                ToolbarButton::Arrow => "A",
-                ToolbarButton::Rectangle => "R",
-                ToolbarButton::Ellipse => "E",
-                ToolbarButton::Text => "T",
-                ToolbarButton::Callout => "Q",
-                ToolbarButton::Redact => "B",
-                ToolbarButton::Pixelate => "M",
-                ToolbarButton::Eraser => "D",
-                ToolbarButton::Crop => "G",
-                ToolbarButton::Eyedropper => "I",
-                ToolbarButton::Undo => "U",
-                ToolbarButton::Redo => "Y",
-                ToolbarButton::Save => "S",
-                ToolbarButton::Copy => "C",
-                ToolbarButton::Print => "O",
-                ToolbarButton::Color | ToolbarButton::Width => unreachable!(),
-            };
-            let font_size = (size as f32 * 0.43).clamp(11.0, 18.0);
-            let (label_width, label_height) = measure_text(label, font_size);
-            draw_text_bgrx(
+        ToolbarButton::Save => {
+            draw_rect(
                 buffer,
                 width,
                 height,
-                Point::new(
-                    (center_x - i32::try_from(label_width).unwrap_or_default() / 2) as f32,
-                    (center_y - i32::try_from(label_height).unwrap_or_default() / 2) as f32,
-                ),
-                label,
-                Color::WHITE,
-                font_size,
+                left,
+                top,
+                right - left,
+                bottom - top,
+                white,
+                2,
+            );
+            fill_rect(
+                buffer,
+                width,
+                height,
+                left + 4,
+                top,
+                right - left - 8,
+                6,
+                white,
+            );
+            draw_rect(
+                buffer,
+                width,
+                height,
+                left + 4,
+                center_y + 1,
+                right - left - 8,
+                bottom - center_y - 1,
+                white,
+                1,
+            );
+        }
+        ToolbarButton::Copy => {
+            draw_rect(
+                buffer,
+                width,
+                height,
+                left + 1,
+                top + 4,
+                right - left - 5,
+                bottom - top - 4,
+                white,
+                2,
+            );
+            draw_rect(
+                buffer,
+                width,
+                height,
+                left + 5,
+                top,
+                right - left - 5,
+                bottom - top - 4,
+                white,
+                2,
+            );
+        }
+        ToolbarButton::Print => {
+            draw_rect(
+                buffer,
+                width,
+                height,
+                left + 4,
+                top,
+                right - left - 8,
+                7,
+                white,
+                2,
+            );
+            fill_rect(
+                buffer,
+                width,
+                height,
+                left,
+                top + 7,
+                right - left,
+                bottom - top - 10,
+                white,
+            );
+            draw_rect(
+                buffer,
+                width,
+                height,
+                left + 4,
+                center_y + 2,
+                right - left - 8,
+                bottom - center_y,
+                white,
+                2,
             );
         }
     }
@@ -2106,12 +2631,25 @@ fn draw_shortcut_hints(buffer: &mut [u32], width: u32, height: u32) {
     );
 }
 
-fn draw_tooltip(buffer: &mut [u32], width: u32, height: u32, layout: ToolbarLayout, text: &str) {
+fn draw_tooltip(
+    buffer: &mut [u32],
+    width: u32,
+    height: u32,
+    layout: ToolbarLayout,
+    button: ToolbarButton,
+    text: &str,
+) {
     let size = 13.0;
     let (text_width, text_height) = measure_text(text, size);
     let box_width = i32::try_from(text_width + 14).unwrap_or(i32::MAX);
     let box_height = i32::try_from(text_height + 10).unwrap_or(i32::MAX);
-    let mut x = layout.x;
+    let index = ToolbarButton::ALL
+        .iter()
+        .position(|candidate| *candidate == button)
+        .and_then(|index| i32::try_from(index).ok())
+        .unwrap_or_default();
+    let button_x = layout.x + (index % layout.columns) * layout.button_size;
+    let mut x = button_x + (layout.button_size - box_width) / 2;
     let mut y = layout.y - box_height - 6;
     if y < 0 {
         y = layout.y + layout.button_size * layout.rows + 6;
@@ -3142,6 +3680,19 @@ mod tests {
 
         assert_eq!(normal.button_size, DEFAULT_BUTTON_SIZE);
         assert_eq!(high_density.button_size, DEFAULT_BUTTON_SIZE * 2);
+    }
+
+    #[test]
+    fn every_toolbar_button_renders_a_visual_icon() {
+        let editor = test_editor();
+        for button in ToolbarButton::ALL {
+            let mut buffer = vec![0_u32; 48 * 48];
+            draw_toolbar_icon(&mut buffer, 48, 48, button, 8, 8, 32, &editor);
+            assert!(
+                buffer.iter().any(|pixel| *pixel != 0),
+                "{button:?} should render visible icon pixels"
+            );
+        }
     }
 
     #[test]
