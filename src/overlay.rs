@@ -2009,597 +2009,311 @@ fn draw_toolbar_icon(
     size: i32,
     editor: &Editor,
 ) {
-    let center_x = x + size / 2;
-    let center_y = y + size / 2;
-    let inset = (size / 4).max(5);
-    let left = x + inset;
-    let right = x + size - inset;
-    let top = y + inset;
-    let bottom = y + size - inset;
-    let white = 0x00ffffff;
-    let icon_color = Color::WHITE;
+    let mut icon = ToolbarIconPainter::new(buffer, width, height, x, y, size);
 
     match button {
         ToolbarButton::Select => {
-            let tip_x = left;
-            let tip_y = top;
-            draw_line(
-                buffer,
-                width,
-                height,
-                tip_x,
-                tip_y,
-                tip_x + 2,
-                bottom,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                tip_x,
-                tip_y,
-                right,
-                bottom - 5,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                tip_x + 2,
-                bottom,
-                center_x - 1,
-                bottom - 5,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                center_x - 1,
-                bottom - 5,
-                center_x + 4,
-                bottom + 2,
-                white,
-                2,
-            );
-        }
-        ToolbarButton::Pen => {
-            draw_line(
-                buffer,
-                width,
-                height,
-                left + 2,
-                bottom - 2,
-                right - 3,
-                top + 3,
-                white,
-                4,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                left,
-                bottom,
-                left + 5,
-                bottom - 1,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                right - 5,
-                top + 1,
-                right - 1,
-                top + 5,
-                white,
-                2,
-            );
-        }
-        ToolbarButton::Highlighter => {
-            draw_line(
-                buffer,
-                width,
-                height,
-                left + 3,
-                bottom - 4,
-                right - 3,
-                top + 4,
-                white,
-                6,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                left,
-                bottom,
-                left + 7,
-                bottom,
-                white,
-                3,
-            );
-        }
-        ToolbarButton::Line => {
-            draw_line(buffer, width, height, left, bottom, right, top, white, 2);
-        }
-        ToolbarButton::Arrow => {
-            draw_line(
-                buffer,
-                width,
-                height,
-                left,
-                bottom,
-                right - 1,
-                top + 1,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                right - 1,
-                top + 1,
-                right - 8,
-                top + 2,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                right - 1,
-                top + 1,
-                right - 2,
-                top + 8,
-                white,
-                2,
-            );
-        }
-        ToolbarButton::Rectangle => {
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left,
-                top + 2,
-                right - left,
-                bottom - top - 4,
-                white,
-                2,
-            );
-        }
-        ToolbarButton::Ellipse => {
-            draw_ellipse_preview(
-                buffer,
-                width,
-                height,
-                left,
-                top + 1,
-                right,
-                bottom - 1,
-                icon_color,
-                2,
-            );
-        }
-        ToolbarButton::Text => {
-            draw_line(
-                buffer,
-                width,
-                height,
-                left,
-                top + 1,
-                right,
-                top + 1,
-                white,
-                3,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                center_x,
-                top + 1,
-                center_x,
-                bottom,
-                white,
-                3,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                center_x - 5,
-                bottom,
-                center_x + 5,
-                bottom,
-                white,
-                2,
-            );
-        }
-        ToolbarButton::Callout => {
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left,
-                top,
-                right - left,
-                bottom - top - 5,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                left + 6,
-                bottom - 5,
-                left + 4,
-                bottom + 1,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                left + 4,
-                bottom + 1,
-                center_x,
-                bottom - 5,
-                white,
-                2,
-            );
-        }
-        ToolbarButton::Redact => {
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left,
-                top,
-                right - left,
-                bottom - top,
-                white,
-                1,
-            );
-            for bar_y in [top + 4, center_y, bottom - 4] {
-                draw_line(
-                    buffer,
-                    width,
-                    height,
-                    left + 3,
-                    bar_y,
-                    right - 3,
-                    bar_y,
-                    white,
-                    3,
-                );
+            icon.line(3, 12, 21, 12);
+            icon.line(12, 3, 12, 21);
+            for segment in [
+                (3, 12, 7, 8),
+                (3, 12, 7, 16),
+                (21, 12, 17, 8),
+                (21, 12, 17, 16),
+                (12, 3, 8, 7),
+                (12, 3, 16, 7),
+                (12, 21, 8, 17),
+                (12, 21, 16, 17),
+            ] {
+                icon.line(segment.0, segment.1, segment.2, segment.3);
             }
         }
+        ToolbarButton::Pen => {
+            icon.polyline(&[(4, 20), (6, 15), (16, 5), (20, 9), (10, 19), (4, 20)]);
+            icon.line(14, 7, 18, 11);
+            icon.line(6, 15, 10, 19);
+        }
+        ToolbarButton::Highlighter => {
+            icon.polyline(&[(5, 16), (15, 6), (20, 11), (10, 21), (5, 16)]);
+            icon.line(13, 8, 18, 13);
+            icon.line_width(4, 21, 11, 21, 3);
+        }
+        ToolbarButton::Line => {
+            icon.line(5, 19, 19, 5);
+            icon.dot(5, 19, 1, 0x00ffffff);
+            icon.dot(19, 5, 1, 0x00ffffff);
+        }
+        ToolbarButton::Arrow => {
+            icon.line(5, 19, 19, 5);
+            icon.polyline(&[(12, 5), (19, 5), (19, 12)]);
+        }
+        ToolbarButton::Rectangle => {
+            icon.rect(4, 6, 20, 18);
+        }
+        ToolbarButton::Ellipse => {
+            icon.ellipse(4, 5, 20, 19);
+        }
+        ToolbarButton::Text => {
+            icon.line_width(5, 5, 19, 5, 3);
+            icon.line_width(12, 5, 12, 20, 3);
+            icon.line(8, 20, 16, 20);
+        }
+        ToolbarButton::Callout => {
+            icon.polyline(&[
+                (4, 5),
+                (20, 5),
+                (20, 16),
+                (12, 16),
+                (7, 20),
+                (8, 16),
+                (4, 16),
+                (4, 5),
+            ]);
+            for dot_x in [8, 12, 16] {
+                icon.dot(dot_x, 11, 1, 0x00ffffff);
+            }
+        }
+        ToolbarButton::Redact => {
+            icon.polyline(&[
+                (3, 12),
+                (6, 8),
+                (10, 6),
+                (14, 6),
+                (18, 8),
+                (21, 12),
+                (18, 16),
+                (14, 18),
+                (10, 18),
+                (6, 16),
+                (3, 12),
+            ]);
+            icon.ellipse(9, 9, 15, 15);
+            icon.line_width(4, 4, 20, 20, 3);
+        }
         ToolbarButton::Pixelate => {
-            let cell = ((right - left - 4) / 3).max(2);
-            for row in 0..3 {
-                for column in 0..3 {
-                    if (row + column) % 2 == 0 || (row == 2 && column == 1) {
-                        fill_rect(
-                            buffer,
-                            width,
-                            height,
-                            left + column * (cell + 2),
-                            top + row * (cell + 2),
-                            cell,
-                            cell,
-                            white,
-                        );
-                    }
-                }
+            for (left, top, right, bottom) in [
+                (4, 4, 9, 9),
+                (11, 4, 15, 8),
+                (17, 5, 21, 10),
+                (5, 11, 9, 15),
+                (11, 10, 17, 16),
+                (18, 12, 21, 16),
+                (4, 18, 9, 21),
+                (11, 18, 15, 21),
+                (17, 18, 21, 21),
+            ] {
+                icon.fill_box(left, top, right, bottom, 0x00ffffff);
             }
         }
         ToolbarButton::Eraser => {
-            let points = [
-                (left + 1, center_y + 4),
-                (center_x + 2, top),
-                (right, center_y - 1),
-                (center_x - 3, bottom),
-            ];
-            for index in 0..points.len() {
-                let start = points[index];
-                let end = points[(index + 1) % points.len()];
-                draw_line(
-                    buffer, width, height, start.0, start.1, end.0, end.1, white, 2,
-                );
-            }
-            draw_line(
-                buffer,
-                width,
-                height,
-                left + 4,
-                center_y + 1,
-                center_x,
-                bottom - 3,
-                white,
-                2,
-            );
+            icon.polyline(&[
+                (5, 15),
+                (14, 6),
+                (20, 12),
+                (12, 20),
+                (8, 20),
+                (5, 17),
+                (5, 15),
+            ]);
+            icon.line(10, 10, 16, 16);
+            icon.line(8, 20, 21, 20);
         }
         ToolbarButton::Crop => {
-            draw_line(
-                buffer,
-                width,
-                height,
-                left + 4,
-                top,
-                left + 4,
-                bottom - 4,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                left,
-                top + 4,
-                right - 4,
-                top + 4,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                right - 4,
-                top + 4,
-                right - 4,
-                bottom,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                left + 4,
-                bottom - 4,
-                right,
-                bottom - 4,
-                white,
-                2,
-            );
+            icon.polyline(&[(7, 4), (7, 17), (20, 17)]);
+            icon.polyline(&[(4, 7), (17, 7), (17, 20)]);
         }
         ToolbarButton::Eyedropper => {
-            draw_line(
-                buffer,
-                width,
-                height,
-                left + 3,
-                bottom - 2,
-                right - 5,
-                top + 6,
-                white,
-                3,
-            );
-            draw_ellipse_preview(
-                buffer,
-                width,
-                height,
-                right - 8,
-                top,
-                right,
-                top + 8,
-                icon_color,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                left,
-                bottom,
-                left + 5,
-                bottom - 2,
-                white,
-                2,
-            );
+            icon.polyline(&[(14, 4), (19, 10), (16, 13), (11, 8), (14, 4)]);
+            icon.polyline(&[(12, 9), (5, 16), (5, 20), (9, 20), (16, 13)]);
+            icon.line(16, 5, 20, 9);
         }
         ToolbarButton::Undo | ToolbarButton::Redo => {
             let undo = button == ToolbarButton::Undo;
-            let start_x = if undo { right } else { left };
-            let bend_x = if undo { left + 5 } else { right - 5 };
-            let arrow_x = if undo { left } else { right };
-            draw_line(
-                buffer,
-                width,
-                height,
-                start_x,
-                bottom - 2,
-                start_x,
-                center_y,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                start_x,
-                center_y,
-                bend_x,
-                top + 3,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                bend_x,
-                top + 3,
-                arrow_x,
-                center_y - 2,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                arrow_x,
-                center_y - 2,
-                arrow_x + if undo { 6 } else { -6 },
-                center_y - 7,
-                white,
-                2,
-            );
-            draw_line(
-                buffer,
-                width,
-                height,
-                arrow_x,
-                center_y - 2,
-                arrow_x + if undo { 7 } else { -7 },
-                center_y + 1,
-                white,
-                2,
-            );
+            let mirror = |value: i32| if undo { value } else { 24 - value };
+            icon.polyline(&[(mirror(10), 5), (mirror(5), 10), (mirror(10), 15)]);
+            icon.polyline(&[
+                (mirror(5), 10),
+                (mirror(12), 10),
+                (mirror(16), 12),
+                (mirror(19), 16),
+                (mirror(19), 20),
+            ]);
         }
         ToolbarButton::Color => {
             let color = editor.color;
             let value = (u32::from(color.red()) << 16)
                 | (u32::from(color.green()) << 8)
                 | u32::from(color.blue());
-            fill_rect(
-                buffer,
-                width,
-                height,
-                center_x - 7,
-                center_y - 7,
-                14,
-                14,
-                value,
-            );
-            draw_rect(
-                buffer,
-                width,
-                height,
-                center_x - 8,
-                center_y - 8,
-                16,
-                16,
-                white,
-                1,
-            );
+            icon.rect(4, 4, 16, 16);
+            icon.fill_box(9, 9, 21, 21, value);
+            icon.rect(9, 9, 21, 21);
         }
         ToolbarButton::Width => {
-            let thickness = i32::try_from(editor.width_index + 2)
-                .unwrap_or(3)
-                .clamp(2, 5);
-            draw_line(
-                buffer, width, height, left, center_y, right, center_y, white, thickness,
-            );
+            icon.line_width(5, 6, 19, 6, 1);
+            icon.line_width(5, 12, 19, 12, 2);
+            let active_width = i32::try_from(editor.width_index).unwrap_or(1) + 3;
+            icon.line_width(5, 19, 19, 19, active_width);
         }
         ToolbarButton::Save => {
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left,
-                top,
-                right - left,
-                bottom - top,
-                white,
-                2,
-            );
-            fill_rect(
-                buffer,
-                width,
-                height,
-                left + 4,
-                top,
-                right - left - 8,
-                6,
-                white,
-            );
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left + 4,
-                center_y + 1,
-                right - left - 8,
-                bottom - center_y - 1,
-                white,
-                1,
-            );
+            icon.polyline(&[(4, 3), (17, 3), (21, 7), (21, 21), (4, 21), (4, 3)]);
+            icon.rect(7, 3, 17, 9);
+            icon.rect(7, 14, 18, 21);
+            icon.dot(15, 6, 1, 0x00ffffff);
         }
         ToolbarButton::Copy => {
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left + 1,
-                top + 4,
-                right - left - 5,
-                bottom - top - 4,
-                white,
-                2,
-            );
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left + 5,
-                top,
-                right - left - 5,
-                bottom - top - 4,
-                white,
-                2,
-            );
+            icon.rect(5, 4, 16, 17);
+            icon.rect(8, 7, 20, 21);
         }
         ToolbarButton::Print => {
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left + 4,
-                top,
-                right - left - 8,
-                7,
-                white,
-                2,
-            );
-            fill_rect(
-                buffer,
-                width,
-                height,
-                left,
-                top + 7,
-                right - left,
-                bottom - top - 10,
-                white,
-            );
-            draw_rect(
-                buffer,
-                width,
-                height,
-                left + 4,
-                center_y + 2,
-                right - left - 8,
-                bottom - center_y,
-                white,
-                2,
-            );
+            icon.rect(7, 3, 17, 9);
+            icon.rect(4, 9, 20, 17);
+            icon.rect(7, 15, 17, 21);
+            icon.dot(17, 12, 1, 0x00ffffff);
+        }
+    }
+}
+
+struct ToolbarIconPainter<'a> {
+    buffer: &'a mut [u32],
+    width: u32,
+    height: u32,
+    origin_x: i32,
+    origin_y: i32,
+    extent: i32,
+    stroke: i32,
+}
+
+impl<'a> ToolbarIconPainter<'a> {
+    fn new(buffer: &'a mut [u32], width: u32, height: u32, x: i32, y: i32, size: i32) -> Self {
+        let maximum_extent = size.saturating_sub(4).max(4);
+        let extent = (size * 2 / 3).clamp(4, maximum_extent);
+        Self {
+            buffer,
+            width,
+            height,
+            origin_x: x + (size - extent) / 2,
+            origin_y: y + (size - extent) / 2,
+            extent,
+            stroke: (size / 19).clamp(1, 4),
+        }
+    }
+
+    fn coordinate(origin: i32, extent: i32, value: i32) -> i32 {
+        origin + (value.clamp(0, 24) * extent + 12) / 24
+    }
+
+    fn point(&self, x: i32, y: i32) -> (i32, i32) {
+        (
+            Self::coordinate(self.origin_x, self.extent, x),
+            Self::coordinate(self.origin_y, self.extent, y),
+        )
+    }
+
+    fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
+        let (x0, y0) = self.point(x0, y0);
+        let (x1, y1) = self.point(x1, y1);
+        draw_line(
+            self.buffer,
+            self.width,
+            self.height,
+            x0,
+            y0,
+            x1,
+            y1,
+            0x00ffffff,
+            self.stroke,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn line_width(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, design_width: i32) {
+        let (x0, y0) = self.point(x0, y0);
+        let (x1, y1) = self.point(x1, y1);
+        let thickness = ((design_width * self.extent + 12) / 24).max(1);
+        draw_line(
+            self.buffer,
+            self.width,
+            self.height,
+            x0,
+            y0,
+            x1,
+            y1,
+            0x00ffffff,
+            thickness,
+        );
+    }
+
+    fn polyline(&mut self, points: &[(i32, i32)]) {
+        for pair in points.windows(2) {
+            self.line(pair[0].0, pair[0].1, pair[1].0, pair[1].1);
+        }
+    }
+
+    fn rect(&mut self, left: i32, top: i32, right: i32, bottom: i32) {
+        let (left, top) = self.point(left, top);
+        let (right, bottom) = self.point(right, bottom);
+        draw_rect(
+            self.buffer,
+            self.width,
+            self.height,
+            left,
+            top,
+            right - left,
+            bottom - top,
+            0x00ffffff,
+            self.stroke,
+        );
+    }
+
+    fn ellipse(&mut self, left: i32, top: i32, right: i32, bottom: i32) {
+        let (left, top) = self.point(left, top);
+        let (right, bottom) = self.point(right, bottom);
+        draw_ellipse_preview(
+            self.buffer,
+            self.width,
+            self.height,
+            left,
+            top,
+            right,
+            bottom,
+            Color::WHITE,
+            self.stroke,
+        );
+    }
+
+    fn fill_box(&mut self, left: i32, top: i32, right: i32, bottom: i32, color: u32) {
+        let (left, top) = self.point(left, top);
+        let (right, bottom) = self.point(right, bottom);
+        fill_rect(
+            self.buffer,
+            self.width,
+            self.height,
+            left,
+            top,
+            (right - left).max(1),
+            (bottom - top).max(1),
+            color,
+        );
+    }
+
+    fn dot(&mut self, x: i32, y: i32, radius: i32, color: u32) {
+        let (center_x, center_y) = self.point(x, y);
+        let radius = ((radius * self.extent + 12) / 24).max(1);
+        for offset_y in -radius..=radius {
+            for offset_x in -radius..=radius {
+                if offset_x * offset_x + offset_y * offset_y <= radius * radius {
+                    fill_rect(
+                        self.buffer,
+                        self.width,
+                        self.height,
+                        center_x + offset_x,
+                        center_y + offset_y,
+                        1,
+                        1,
+                        color,
+                    );
+                }
+            }
         }
     }
 }
