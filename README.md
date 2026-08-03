@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/rustshot-logo.png" alt="RustShot logo" width="420">
+  <img src="assets/rustshot-logo-light.png" alt="RustShot logo" width="420">
 </p>
 
 <p align="center">

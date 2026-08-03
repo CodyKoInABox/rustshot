@@ -58,7 +58,7 @@ jobs:
           Copy-Item README.md, BRANDING.md, LICENSE, CHANGELOG.md, SUPPORT.md, SECURITY.md, THIRD-PARTY-LICENSES.txt $packageDirectory
           $assetsDirectory = Join-Path $packageDirectory "assets"
           New-Item -ItemType Directory -Force -Path $assetsDirectory | Out-Null
-          Copy-Item assets\rustshot-logo.png, assets\rustshot-icon.png $assetsDirectory
+          Copy-Item assets\rustshot-logo-light.png, assets\rustshot-logo.png, assets\rustshot-icon.png $assetsDirectory
           $archive = "$packageName.zip"
           Compress-Archive -Path "$packageDirectory\*" -DestinationPath "dist\$archive"
           $hash = (Get-FileHash "dist\$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
