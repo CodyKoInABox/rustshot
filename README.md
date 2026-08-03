@@ -12,18 +12,14 @@ RustShot is a fast, lightweight screenshot and annotation tool for Windows. It c
 region capture with a native editor, configurable global shortcuts, automatic workflows, and
 low-overhead tray operation.
 
-## Faster where it counts
+## RustShot vs. Lightshot
 
-In the published 30-iteration Windows benchmark against Lightshot 5.5.0.4, RustShot delivered:
+- **86.46% less RAM**
+- **64.76% faster startup**
+- **70.61% faster copying**
+- **45.49% faster screenshot activation**
 
-- **45.49% faster overlay activation** — 51.49 ms instead of 94.46 ms.
-- **70.61% faster copy completion** — 35.90 ms instead of 122.16 ms.
-- **64.76% faster cold readiness** — 195.85 ms instead of 555.76 ms.
-- **86.46% lower private memory usage** — 2.83 MiB instead of 20.91 MiB.
-
-Both applications completed **100% of the measured trials successfully**. Results reflect the
-recorded test system and configuration; see the
-[full benchmark methodology and report](benchmarks/reports/20260802-112030.md).
+[See the full benchmark.](benchmarks/reports/20260802-112030.md)
 
 ## Download
 
