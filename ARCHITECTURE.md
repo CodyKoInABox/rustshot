@@ -1,6 +1,6 @@
-# Rustshot architecture
+# RustShot architecture
 
-Rustshot's first backend is Windows. The image model, annotation commands, encoder, and
+RustShot's first backend is Windows. The image model, annotation commands, encoder, and
 configuration are platform-independent so another capture, clipboard, or printing backend can be
 added without replacing the editor.
 
@@ -24,7 +24,7 @@ settings dialog has its own UI thread and submits validated candidates back to t
 hotkey replacement and atomic persistence complete before the dialog reports success. The app
 ignores repeated capture shortcuts until the current capture or settings session ends.
 
-A named Windows mutex prevents more than one Rustshot tray process from running in the same login
+A named Windows mutex prevents more than one RustShot tray process from running in the same login
 session. The process also maintains a bounded local diagnostic log. On request, the tray generates a
 plain-text support report from version, architecture, non-secret settings, paths, and recent errors;
 captured pixels and clipboard contents are never logged.
@@ -70,7 +70,7 @@ quality loss from repeatedly resampling an already-cropped bitmap.
 
 ## Memory and rendering model
 
-Rustshot keeps no screen-sized buffer while idle. A region session owns the captured monitor, its
+RustShot keeps no screen-sized buffer while idle. A region session owns the captured monitor, its
 selected crop, a small vector of objects, and the reusable presentation surface. The editor caches
 the committed flattened crop and refreshes it only when history changes.
 
@@ -80,10 +80,3 @@ mutate the preview object in place, so idle movement and dragging do not clone t
 
 System glyph rasterization is cached in a bounded 2,048-entry cache. Capture, encoding, and printer
 work stay off the event loop, while the overlay uses a software buffer sized to the active monitor.
-
-## Delivery milestones
-
-1. Tray lifecycle, validated shortcuts, monitor capture, and atomic autosave.
-2. Region overlay, resizable selection, Save As, clipboard, and native printing.
-3. Complete annotation toolkit, object editing, crop, custom colors, and secure effects.
-4. Automatic region actions, remembered preferences, native UX polish, and performance hardening.

@@ -6,9 +6,18 @@ rust-version = "1.88"
 description = "A fast, lightweight screenshot and annotation tool"
 license = "MIT"
 repository = "https://github.com/CodyKoInABox/rustshot"
+homepage = "https://github.com/CodyKoInABox"
+authors = ["CodyKoInABox"]
 publish = false
 keywords = ["screenshot", "screen-capture", "annotation", "windows"]
 categories = ["multimedia::images", "gui"]
+
+[package.metadata.winresource]
+CompanyName = "CodyKoInABox"
+FileDescription = "RustShot Screenshot Tool"
+LegalCopyright = "Copyright (c) 2026 CodyKoInABox"
+OriginalFilename = "rustshot.exe"
+ProductName = "RustShot"
 
 [dependencies]
 anyhow = "1.0"

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable user-visible changes to Rustshot are recorded here. Rustshot follows semantic
+All notable user-visible changes to RustShot are recorded here. RustShot follows semantic
 versioning for the desktop application and its persisted configuration, not for the unpublished
 internal Rust library crate.
 
@@ -15,9 +15,7 @@ internal Rust library crate.
 - Bounded local diagnostic logging and an on-demand support report.
 - A versioned configuration schema and explicit compatibility policy.
 
-### Release preparation
-
-- Locked-dependency CI, dependency advisory and license checks, native integration smoke tests,
-  and a draft GitHub release workflow for `x86_64-pc-windows-msvc`.
+- Locked-dependency CI, dependency advisory and license checks, native integration coverage, and
+  automated portable Windows release packaging.
 
 [1.0.0]: https://github.com/CodyKoInABox/rustshot/releases/tag/v1.0.0

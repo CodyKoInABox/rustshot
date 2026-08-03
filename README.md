@@ -1,65 +1,51 @@
-# Rustshot
+<p align="center">
+  <img src="assets/rustshot-logo.png" alt="RustShot logo" width="420">
+</p>
 
-Rustshot is an open-source, Windows-first screenshot tool written in Rust. It is designed to feel
-like Lightshot while staying responsive, native, and inexpensive when it is waiting in the tray.
+<p align="center">
+  <a href="https://github.com/CodyKoInABox/rustshot/actions/workflows/ci.yml"><img src="https://github.com/CodyKoInABox/rustshot/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows 10 and 11">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-orange" alt="MIT license"></a>
+</p>
 
-> [!NOTE]
-> Rustshot is under active development. The `main` branch currently targets the first usable MVP.
+RustShot is a fast, lightweight screenshot and annotation tool for Windows. It combines familiar
+region capture with a native editor, configurable global shortcuts, automatic workflows, and
+low-overhead tray operation.
 
-## Current Benchmark against Lightshot
-==> Benchmark summary
+## Download
 
-Application Success Activation median Activation p95 Workflow median Private memory
------------ ------- ----------------- -------------- --------------- --------------
-Lightshot   100,0%  94,46 ms          100,24 ms      1.716,27 ms     20,9 MiB      
-Rustshot    100,0%  51,49 ms          62,86 ms       1.500,89 ms     2,8 MiB  
+RustShot is distributed through [GitHub Releases](https://github.com/CodyKoInABox/rustshot/releases)
+as a portable 64-bit Windows application. No installer is required: extract the ZIP and run
+`rustshot.exe` on Windows 10 or Windows 11.
 
+## Highlights
 
-## Features
+- Full-screen capture for the monitor under the pointer or the complete virtual desktop.
+- Resizable region selection with move and edge controls.
+- Pen, highlighter, line, arrow, rectangle, ellipse, text, and callout tools.
+- Secure redaction, pixelation, crop, object editing, and undo/redo.
+- Lossless clipboard export, PNG/JPEG saving, and native printing.
+- Optional automatic copy and automatic save after region selection.
+- Configurable global shortcuts and remembered editor preferences.
+- Native Windows interface with no browser or webview runtime.
+- Local-only operation with no telemetry or upload service.
 
-- Two independent system-wide shortcuts:
-  - **Full screen** captures and immediately saves a monitor or the virtual desktop.
-  - **Region** freezes the screen and lets you drag out the exact area to keep.
-- Resizable region selections with eight handles and move support before export.
-- A vector editor with pen, highlighter, line, arrow, rectangle, ellipse, text box, callout,
-  secure redaction, pixelation, object eraser, crop, and eyedropper tools.
-- Select, move, resize, recolor, and restyle existing objects, with allocation-conscious undo/redo.
-- Custom Windows color picker, quick palette, stroke widths, and remembered last-used tool/style.
-- Save As, lossless Windows clipboard copy, and native printing.
-- PNG or JPEG chosen in each Save As dialog, plus configurable JPEG quality and PNG compression.
-- Optional automatic copy and/or autosave immediately after selecting a region.
-- A native settings window and tray process with no browser or webview runtime.
+## Quick start
 
-The initial defaults are `Ctrl+Shift+F11` for full-screen autosave and `Ctrl+Shift+F10` for region
-capture. They avoid taking over the Print Screen key before the user asks Rustshot to do so.
+RustShot starts in the system tray. The default shortcuts are:
 
-## Build from source
+| Shortcut | Action |
+| --- | --- |
+| `Ctrl+Shift+F10` | Select and edit a region |
+| `Ctrl+Shift+F11` | Capture and save the current monitor |
 
-Requirements:
-
-- Windows 10 or newer
-- Rust 1.88 or later
-- Visual Studio Build Tools with the **Desktop development with C++** workload
-
-```powershell
-cargo build --release --locked
-.\target\release\rustshot.exe
-```
-
-Choose **Settings...** from the tray menu to change Rustshot's behavior. **Save** validates the
-whole form, activates both shortcuts, and persists the changes immediately; if Windows rejects a
-shortcut or the file cannot be saved, the previous settings remain active. **Cancel** leaves the
-current settings unchanged. You can also launch `rustshot.exe --settings` to open the same window.
-
-To change a shortcut, focus its field, hold any supported modifier chord, press one non-modifier
-key, and release it. Chords can contain more than two modifiers and can use keys such as Backspace;
-for example, `Ctrl+Shift+Backspace` and `Ctrl+Shift+Alt+F10` are valid.
+The tray menu provides capture commands, the screenshots folder, settings, diagnostics, and quit.
+Shortcuts, output format, monitor scope, cursor capture, automatic copy, and automatic save are all
+configurable from **Settings**.
 
 ## Region editor
 
-Drag to select a region. The eight boundary handles resize it and dragging inside moves it. Every
-toolbar button has a hover tooltip, and the most useful shortcuts remain visible at the bottom of
-the overlay.
+After selecting a region, annotations remain editable until export.
 
 | Key | Action |
 | --- | --- |
@@ -67,83 +53,75 @@ the overlay.
 | `P`, `H`, `L`, `A` | Pen, highlighter, line, arrow |
 | `R`, `E` | Rectangle, ellipse |
 | `T`, `Q` | Text box, callout; `Shift+Enter` inserts a line break |
-| `B`, `M` | Secure black redaction, pixelation |
-| `D` / `Delete` | Delete the object under the pointer / selected object |
-| `G` | Crop or resize the captured region |
-| `I` | Pick a color from captured pixels |
-| `K` | Open the native custom color picker |
+| `B`, `M` | Secure redaction, pixelation |
+| `D` / `Delete` | Delete the object under the pointer or selected object |
+| `G` | Crop the captured region |
+| `I`, `K` | Eyedropper, custom color picker |
 | `U` / `Ctrl+Z` | Undo |
 | `Y` / `Ctrl+Y` | Redo |
 | `X` | Clear annotations |
 | `S`, `C`, `O` | Save As, copy, print |
 | `Enter` | Copy |
-| `Escape` | Cancel the active edit, then cancel the capture |
+| `Escape` | Cancel the active edit or capture |
 
-Secure redaction is flattened as solid black pixels in the exported image; it does not merely draw
-a translucent overlay. Pixelation is also destructively flattened into the output pixels.
+Secure redaction is flattened into opaque black pixels in the exported image. Pixelation is also
+applied directly to exported pixels rather than stored as a removable overlay.
 
-## Region completion options
+## Settings and files
 
-The settings window can automatically copy a selected region, automatically save it, or do both.
-Enabling either option completes the capture immediately after selection and skips the editor.
-Autosave uses the configured folder and image format. With both options enabled, the same capture
-is copied and saved.
+RustShot stores its configuration and bounded diagnostic log in the current Windows user's
+application configuration directory. Screenshots are never included in logs.
 
-## Configuration
+Supported settings include:
 
-The settings window manages every supported workflow option. Rustshot stores the values as TOML
-under the current user's application configuration directory. The editor preference fields are
-updated automatically when an editor session ends.
+- independent full-screen and region shortcuts;
+- current-monitor or virtual-desktop capture;
+- optional cursor inclusion;
+- PNG compression and JPEG quality;
+- automatic region copy and save;
+- autosave destination; and
+- last-used editor tool, color, and stroke width.
 
-```toml
-fullscreen_shortcut = "Ctrl+Shift+F11"
-region_shortcut = "Ctrl+Shift+F10"
-autosave_directory = "C:\\Users\\you\\Pictures\\Rustshot"
-image_format = "png"
-jpeg_quality = 90
-png_compression = "default"
-monitor_scope = "cursor_monitor"
-include_cursor = true
-region_auto_copy = false
-region_autosave = false
-last_editor_tool = "pen"
-editor_color = { red = 255, green = 64, blue = 64 }
-editor_stroke_width = 1
+The **Create diagnostic report** tray command produces a reviewable text report containing version,
+architecture, relevant settings, paths, and recent errors.
+
+## Performance
+
+The repository includes a repeatable, black-box Windows benchmark against Lightshot. In the
+published 30-iteration run, both applications completed every measured trial successfully:
+
+| Metric | Lightshot | RustShot |
+| --- | ---: | ---: |
+| Overlay activation, median | 94.46 ms | 51.49 ms |
+| Overlay activation, p95 | 100.24 ms | 62.86 ms |
+| Copy completion, median | 122.16 ms | 35.90 ms |
+| Private memory | 20.91 MiB | 2.83 MiB |
+
+Results are specific to the recorded machine and configuration. The complete methodology and
+environment are available in the [benchmark report](benchmarks/reports/20260802-112030.md).
+
+## Build from source
+
+Requirements:
+
+- 64-bit Windows 10 or Windows 11
+- Rust 1.88 or newer
+- Visual Studio Build Tools with the **Desktop development with C++** workload
+
+```powershell
+cargo build --release --locked
+.\target\release\rustshot.exe
 ```
 
-`jpeg_quality` accepts `1..=100`. PNG is lossless, so its setting controls compression speed and
-file size rather than visual quality. Save As uses the chosen `.png`, `.jpg`, or `.jpeg` extension
-to select the encoder; the configured format is the dialog default and the autosave format.
+## Project information
 
-A shortcut must contain exactly one non-modifier key. Accepted modifier names are
-`Ctrl`/`Control`, `Shift`, `Alt`, and `Super`; common keys include `A`-`Z`, `0`-`9`, `F1`-`F24`,
-`PrintScreen`, `Backspace`, `Space`, `Enter`, and the arrow keys. Rustshot reports duplicate
-shortcuts and shortcuts already reserved by Windows.
-
-`monitor_scope` accepts `cursor_monitor` or `virtual_desktop` for the immediate full-screen
-workflow. Region capture starts on the monitor under the pointer. `include_cursor` controls whether
-the native pointer is included in captured pixels.
-
-## Design goals
-
-- Do no work while idle beyond waiting for native events.
-- Capture before opening the overlay so Rustshot never captures its own UI.
-- Cache committed annotations and avoid allocating a new image for idle pointer movement.
-- Store inverse edit commands instead of full bitmap snapshots for undo/redo.
-- Keep capture, encoding, and printer spooling off the window event loop.
-- Keep OS-specific behavior behind a small platform layer.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for module boundaries and [TESTING.md](TESTING.md) for the
-native release checklist.
-
-## Performance benchmark
-
-The interactive Windows harness in [benchmarks/README.md](benchmarks/README.md) automates a
-black-box Rustshot-versus-Lightshot comparison. It measures cold readiness, warm overlay latency,
-copy completion, idle resources, reliability, and captured-pixel correctness, with CSV and JSON
-output for repeatable runs. Shareable Markdown results are available in the
-[published benchmark reports](benchmarks/reports/README.md).
+- [Changelog](CHANGELOG.md)
+- [Support and diagnostics](SUPPORT.md)
+- [Security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
+- [Architecture](ARCHITECTURE.md)
+- [Brand assets](BRANDING.md)
 
 ## License
 
-[MIT](LICENSE)
+RustShot is available under the [MIT License](LICENSE).

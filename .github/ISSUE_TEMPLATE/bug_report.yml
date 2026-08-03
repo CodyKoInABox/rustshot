@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible Rustshot problem
+description: Report a reproducible RustShot problem
 title: "[Bug]: "
 labels:
   - bug
@@ -11,7 +11,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: Rustshot version
+      label: RustShot version
       placeholder: 1.0.0
     validations:
       required: true

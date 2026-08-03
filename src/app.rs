@@ -893,27 +893,15 @@ fn build_tray_icon() -> Result<TrayIcon> {
 }
 
 fn rustshot_icon() -> Result<Icon> {
-    const SIZE: u32 = 32;
-    let mut rgba = vec![0_u8; (SIZE * SIZE * 4) as usize];
-    for y in 3..29 {
-        for x in 3..29 {
-            let index = ((y * SIZE + x) * 4) as usize;
-            rgba[index] = 38;
-            rgba[index + 1] = 119;
-            rgba[index + 2] = 222;
-            rgba[index + 3] = 255;
-        }
-    }
-    for y in 9..23 {
-        for x in 8..24 {
-            let border = !(11..21).contains(&x) || !(12..20).contains(&y);
-            if border {
-                let index = ((y * SIZE + x) * 4) as usize;
-                rgba[index..index + 4].copy_from_slice(&[255, 255, 255, 255]);
-            }
-        }
-    }
-    Icon::from_rgba(rgba, SIZE, SIZE).context("generated an invalid tray icon")
+    let image = ::image::load_from_memory_with_format(
+        include_bytes!("../resources/rustshot-tray.png"),
+        ::image::ImageFormat::Png,
+    )
+    .context("the embedded RustShot tray icon is invalid")?
+    .to_rgba8();
+    let (width, height) = image.dimensions();
+    Icon::from_rgba(image.into_raw(), width, height)
+        .context("Windows rejected the embedded RustShot tray icon")
 }
 
 fn next_autosave_path(config: &Config) -> PathBuf {

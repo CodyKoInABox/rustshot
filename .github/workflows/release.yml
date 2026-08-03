@@ -55,7 +55,10 @@ jobs:
           $packageDirectory = Join-Path "dist" $packageName
           New-Item -ItemType Directory -Force -Path $packageDirectory | Out-Null
           Copy-Item "target\$env:TARGET\release\rustshot.exe" $packageDirectory
-          Copy-Item README.md, LICENSE, CHANGELOG.md, SUPPORT.md, SECURITY.md, SECURITY-AUDIT.md, THIRD-PARTY-LICENSES.txt $packageDirectory
+          Copy-Item README.md, BRANDING.md, LICENSE, CHANGELOG.md, SUPPORT.md, SECURITY.md, THIRD-PARTY-LICENSES.txt $packageDirectory
+          $assetsDirectory = Join-Path $packageDirectory "assets"
+          New-Item -ItemType Directory -Force -Path $assetsDirectory | Out-Null
+          Copy-Item assets\rustshot-logo.png, assets\rustshot-icon.png $assetsDirectory
           $archive = "$packageName.zip"
           Compress-Archive -Path "$packageDirectory\*" -DestinationPath "dist\$archive"
           $hash = (Get-FileHash "dist\$archive" -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -76,4 +79,4 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           $assets = Get-ChildItem dist -File | Where-Object { $_.Extension -in ".zip", ".sha256" } | ForEach-Object { $_.FullName }
-          gh release create $tag $assets --draft --verify-tag --generate-notes --title "Rustshot $tag"
+          gh release create $tag $assets --draft --verify-tag --generate-notes --title "RustShot $tag"

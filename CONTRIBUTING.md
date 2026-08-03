@@ -1,22 +1,25 @@
-# Contributing to Rustshot
+# Contributing to RustShot
 
-Rustshot currently accepts focused bug fixes and release-hardening improvements for the Windows
-1.0 milestone. Discuss broad feature or platform work in an issue before investing in an
-implementation.
+Bug fixes, documentation improvements, performance work, and focused feature contributions are
+welcome. Large UI changes, new platform backends, and changes to persisted configuration are best
+discussed in a GitHub issue before implementation.
 
-## Development checks
+## Development environment
 
-Use Rust 1.88 or newer on 64-bit Windows with the Visual Studio C++ build tools, then run:
+RustShot targets 64-bit Windows 10 and Windows 11. Development requires Rust 1.88 or newer and the
+Visual Studio C++ build tools.
+
+The standard validation suite is:
 
 ```powershell
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked --all-targets
+cargo build --release --locked
 ```
 
-Changes to native capture or clipboard behavior should also run the opt-in tests documented in
-`RELEASING.md`. Pull requests should explain user-visible behavior, tests performed, and any manual
-Windows coverage.
+Pull requests are expected to describe user-visible behavior, include appropriate tests, and note
+any Windows configurations exercised manually. Commits and issue attachments must not contain
+private screenshots, unreviewed diagnostic data, signing credentials, or private keys.
 
-Do not include captured private information, diagnostic reports without reviewing their paths, or
-signing credentials in commits or issues. Report vulnerabilities using `SECURITY.md`.
+Security vulnerabilities follow the private reporting process in [SECURITY.md](SECURITY.md).

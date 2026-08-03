@@ -1,24 +1,30 @@
-# Security policy
+# RustShot security policy
 
-## Reporting a vulnerability
+## Supported versions
 
-Do not open a public issue for a vulnerability or attach a sensitive screenshot to an issue.
-Use GitHub's **Report a vulnerability** private security-advisory form for this repository. Include
-the affected Rustshot version, reproduction steps, impact, and the smallest safe proof of concept.
+Security fixes target the latest available RustShot 1.x release. Development snapshots receive
+best-effort fixes but are not supported release artifacts.
 
-Please allow reasonable time for investigation and a coordinated fix before public disclosure.
-Rustshot maintainers will acknowledge a complete report, assess affected versions, and publish an
-advisory when user action is required.
+## Private vulnerability reporting
 
-## Scope
+Vulnerabilities are reported through GitHub's private
+[security advisory form](https://github.com/CodyKoInABox/rustshot/security/advisories/new), not a
+public issue. Reports are most useful when they include the affected version, impact, reproduction
+steps, and the smallest safe proof of concept.
 
-Security-sensitive areas include screen capture, clipboard ownership, secure redaction, image
-encoding, configuration paths, global shortcuts, native Windows handles, release artifacts, and
-dependency supply chain behavior.
+Complete reports are acknowledged and assessed privately. An advisory is published when user
+action is required, with reasonable time allowed for a coordinated fix before disclosure.
 
-The project checks `Cargo.lock` against RustSec advisories, restricts dependency sources and
-licenses with `cargo-deny`, and reviews the explicitly allowed Windows `unsafe` modules as part of
-the release checklist. Automated checks support but do not replace manual review.
+## Security boundaries
 
-Only the latest published Rustshot 1.x release is guaranteed to receive a security fix. The current
-unreleased code is supported on a best-effort basis while 1.0 is being prepared.
+Security-sensitive components include screen capture, clipboard ownership, secure redaction,
+image encoding, configuration paths, global shortcuts, native Windows handles, release artifacts,
+and the dependency supply chain.
+
+The project uses locked dependencies, RustSec advisory checks, source and license restrictions,
+warnings for application-level unsafe code, and isolated Windows FFI modules. Automated checks
+support the native-code review boundary but do not replace it.
+
+`RUSTSEC-2026-0192` marks the transitive `ttf-parser 0.25.1` dependency as unmaintained. The
+dependency is reached through `fontdue 0.9.4`, has no reported vulnerability or safe upgrade, and
+is explicitly documented in `deny.toml`. The exception is limited to this maintenance advisory.

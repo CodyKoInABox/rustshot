@@ -1,7 +1,7 @@
-# Rustshot vs. Lightshot benchmark
+# RustShot vs. Lightshot benchmark
 
 This is an interactive Windows black-box benchmark. It drives the installed applications through
-the same visible region-capture workflow instead of comparing Rustshot internals with unavailable
+the same visible region-capture workflow instead of comparing RustShot internals with unavailable
 Lightshot internals.
 
 The benchmark creates an 800x600 deterministic color pattern, opens each application's capture
@@ -18,13 +18,13 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass `
   -RestartRunningApps
 ```
 
-`-RestartRunningApps` temporarily stops running Rustshot and Lightshot processes, benchmarks clean
-instances sequentially, and relaunches the original executables when the run ends. Quit the two apps
-yourself and omit this switch if you do not want the script to manage them.
+`-RestartRunningApps` temporarily stops running RustShot and Lightshot processes, benchmarks clean
+instances sequentially, and relaunches the original executables when the run ends. Without this
+switch, both applications must already be closed.
 
-The default run builds Rustshot in release mode under the isolated `target/benchmark-build`
+The default run builds RustShot in release mode under the isolated `target/benchmark-build`
 directory, performs 3 warmups and 30 measured iterations per application, and randomly chooses
-which application runs first. The isolated build avoids replacing a Rustshot executable that may
+which application runs first. The isolated build avoids replacing a RustShot executable that may
 already be running. Do not use the mouse or keyboard, cover the pattern window, lock the desktop, or
 change display settings until it finishes.
 
@@ -49,8 +49,8 @@ To add an existing result to the public report directory, run:
 
 When `-ResultsDirectory` is omitted, `report.ps1` uses the newest folder under
 `benchmarks/results`. Pass `-OutputPath comparison.md` to choose a different filename inside that
-result folder. Pass `-SkipPublicCopy` if you only want the local report. Full benchmark runs publish
-a commit-ready copy by default; pass `-SkipPublicReport` to `compare.ps1` for disposable smoke runs.
+result folder. `-SkipPublicCopy` keeps the report local. Full benchmark runs publish a commit-ready
+copy by default; `-SkipPublicReport` creates a disposable smoke run.
 
 ## Useful commands
 
@@ -101,7 +101,7 @@ Pass `-OutputDirectory <path>` to choose the result location and `-TargetOrder R
   process initialization time.
 - **Activation**: hotkey injection until the application's large overlay window is visible. This is
   the cleanest comparable capture-latency number.
-- **Copy**: copy action until a new clipboard bitmap is readable. Rustshot receives its documented
+- **Copy**: copy action until a new clipboard bitmap is readable. RustShot receives its documented
   `C` command. Lightshot 5.5 uses its visible Copy toolbar button because its `Ctrl+C` handler does
   not accept synthetic input reliably.
 - **Workflow**: hotkey through validated clipboard output. It includes identical fixed settling and
@@ -116,7 +116,7 @@ the nearest-rank definition.
 
 ## Hotkeys and safety
 
-Rustshot's region hotkey is read from its normal `config.toml`; the built-in default is used when no
+RustShot's region hotkey is read from its normal `config.toml`; the built-in default is used when no
 saved config exists. Lightshot's enabled region hotkey is read from its per-user Skillbrains registry
 settings. Explicit command-line hotkeys take precedence.
 
