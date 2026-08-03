@@ -12,6 +12,8 @@ RustShot is a fast, lightweight screenshot and annotation tool for Windows. It c
 region capture with a native editor, configurable global shortcuts, automatic workflows, and
 low-overhead tray operation.
 
+**[Visit the RustShot website](https://codykoinabox.github.io/rustshot/)**
+
 ## RustShot vs. Lightshot
 
 - **86.46% less RAM**
@@ -124,6 +126,7 @@ cargo build --release --locked
 
 ## Project information
 
+- [Website](https://codykoinabox.github.io/rustshot/)
 - [Changelog](CHANGELOG.md)
 - [Support and diagnostics](SUPPORT.md)
 - [Security policy](SECURITY.md)

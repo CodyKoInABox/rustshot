@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b0c0e">
+    <meta
+      name="description"
+      content="RustShot is a fast, lightweight screenshot and annotation tool for Windows. Capture, edit, redact, and export without a browser runtime or telemetry."
+    >
+    <meta property="og:title" content="RustShot — Capture at the speed of thought">
+    <meta
+      property="og:description"
+      content="A fast, lightweight, native screenshot and annotation tool for Windows."
+    >
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://codykoinabox.github.io/rustshot/">
+    <meta property="og:site_name" content="RustShot">
+    <meta property="og:image" content="https://codykoinabox.github.io/rustshot/assets/rustshot-icon.png">
+    <meta property="og:image:alt" content="RustShot logo on a dark background">
+    <meta property="og:image:width" content="256">
+    <meta property="og:image:height" content="256">
+    <meta name="twitter:card" content="summary">
+    <title>RustShot — Fast, lightweight screenshots for Windows</title>
+    <link rel="canonical" href="https://codykoinabox.github.io/rustshot/">
+    <link rel="icon" href="assets/rustshot-icon.png" type="image/png">
+    <script>document.documentElement.classList.add('js');</script>
+    <link rel="stylesheet" href="styles.css">
+    <script src="script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header" data-header>
+      <div class="nav-shell">
+        <a class="brand" href="#top" aria-label="RustShot home">
+          <img src="assets/rustshot-icon.png" alt="" width="40" height="40">
+          <span><strong>Rust</strong>Shot</span>
+        </a>
+
+        <button class="menu-button" type="button" aria-expanded="false" aria-controls="site-nav">
+          <span class="sr-only">Toggle navigation</span>
+          <span></span><span></span>
+        </button>
+
+        <nav class="site-nav" id="site-nav" aria-label="Main navigation">
+          <a href="#performance">Performance</a>
+          <a href="#features">Features</a>
+          <a href="#privacy">Privacy</a>
+          <a href="https://github.com/CodyKoInABox/rustshot" target="_blank" rel="noreferrer">GitHub</a>
+          <a class="button button-small" href="https://github.com/CodyKoInABox/rustshot/releases">Download</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero section" id="top">
+        <div class="hero-glow" aria-hidden="true"></div>
+        <div class="shell hero-grid">
+          <div class="hero-copy" data-reveal>
+            <div class="eyebrow"><span></span> Native screenshot tool for Windows</div>
+            <h1>Capture at the<br><em>speed of thought.</em></h1>
+            <p class="hero-lede">
+              RustShot is a fast, lightweight screenshot and annotation tool that stays out of
+              your way—until the instant you need it.
+            </p>
+            <div class="hero-actions">
+              <a class="button button-primary" href="https://github.com/CodyKoInABox/rustshot/releases">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14"/></svg>
+                Download for Windows
+              </a>
+              <a class="button button-ghost" href="#performance">See the benchmark</a>
+            </div>
+            <p class="download-note">
+              Portable x64 app <span aria-hidden="true">•</span> Windows 10 &amp; 11
+              <span aria-hidden="true">•</span> MIT licensed
+            </p>
+
+            <dl class="hero-stats" aria-label="RustShot benchmark highlights">
+              <div>
+                <dt>2.83 <span>MiB</span></dt>
+                <dd>Private memory</dd>
+              </div>
+              <div>
+                <dt>51.49 <span>ms</span></dt>
+                <dd>Capture activation</dd>
+              </div>
+              <div>
+                <dt>0</dt>
+                <dd>Trackers or uploads</dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="hero-product" data-reveal data-delay="1" aria-label="Stylized preview of RustShot's capture editor">
+            <div class="product-halo" aria-hidden="true"></div>
+            <div class="app-window">
+              <div class="window-bar">
+                <div class="window-brand">
+                  <img src="assets/rustshot-icon.png" alt="" width="24" height="24">
+                  <span>RustShot</span>
+                </div>
+                <div class="window-controls" aria-hidden="true"><i></i><i></i><i></i></div>
+              </div>
+              <div class="capture-canvas">
+                <div class="desktop-card card-one">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="desktop-card card-two">
+                  <span></span><span></span>
+                </div>
+                <div class="selection-box">
+                  <span class="selection-size">960 × 640</span>
+                  <i class="handle handle-nw"></i><i class="handle handle-ne"></i>
+                  <i class="handle handle-sw"></i><i class="handle handle-se"></i>
+                  <svg class="annotation-arrow" viewBox="0 0 200 120" aria-hidden="true">
+                    <path d="M20 96C63 92 102 66 143 29"/>
+                    <path d="m121 27 25-1-4 24"/>
+                  </svg>
+                  <div class="callout">Ready in 51 ms</div>
+                </div>
+                <div class="editor-toolbar" aria-hidden="true">
+                  <span class="tool active"><svg viewBox="0 0 24 24"><path d="m4 20 4-1 11-11-3-3L5 16l-1 4Z"/></svg></span>
+                  <span class="tool"><svg viewBox="0 0 24 24"><path d="M5 19 19 5m-2 0h2v2"/></svg></span>
+                  <span class="tool"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1"/></svg></span>
+                  <span class="tool"><svg viewBox="0 0 24 24"><path d="M5 6h14v11H9l-4 3V6Z"/></svg></span>
+                  <span class="tool"><svg viewBox="0 0 24 24"><path d="M4 6h16v12H4zM7 9l10 6m0-6L7 15"/></svg></span>
+                  <i></i>
+                  <span class="tool confirm"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></span>
+                </div>
+              </div>
+            </div>
+            <div class="floating-chip chip-speed"><span class="pulse-dot"></span> Native &amp; ready</div>
+            <div class="floating-chip chip-memory"><strong>−86%</strong> memory</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="trust-strip">
+        <div class="shell trust-row">
+          <p>Built for the way you work</p>
+          <span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM8 5v14M4 10h4"/></svg> Native Windows</span>
+          <span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6l-7-3Z"/></svg> Local by default</span>
+          <span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 13h4l2-8 4 14 2-6h4"/></svg> Measured performance</span>
+          <span><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 4h12v16H6zM9 8h6M9 12h6M9 16h4"/></svg> Open source</span>
+        </div>
+      </div>
+
+      <section class="section performance" id="performance">
+        <div class="shell">
+          <div class="section-heading" data-reveal>
+            <div>
+              <div class="eyebrow"><span></span> Published black-box benchmark</div>
+              <h2>Fast in the moments<br>that actually matter.</h2>
+            </div>
+            <p>
+              RustShot and Lightshot completed the same validated region-capture workflow across
+              30 measured trials. Lower is better in every comparison below.
+            </p>
+          </div>
+
+          <div class="benchmark-grid">
+            <article class="benchmark-card benchmark-featured" data-reveal>
+              <div class="benchmark-topline">
+                <span>Private memory</span>
+                <strong>86.46% lower</strong>
+              </div>
+              <div class="metric-value">2.83 <small>MiB</small></div>
+              <div class="bar-pair" aria-label="Private memory: RustShot 2.83 MiB, Lightshot 20.91 MiB">
+                <div class="bar-row rustshot"><span>RustShot</span><div><i style="--bar: 13.54%"></i></div><b>2.83</b></div>
+                <div class="bar-row competitor"><span>Lightshot</span><div><i style="--bar: 100%"></i></div><b>20.91</b></div>
+              </div>
+            </article>
+
+            <article class="benchmark-card" data-reveal data-delay="1">
+              <div class="benchmark-topline">
+                <span>Cold readiness</span>
+                <strong>64.76% faster</strong>
+              </div>
+              <div class="metric-value">195.85 <small>ms</small></div>
+              <div class="bar-pair" aria-label="Cold readiness: RustShot 195.85 milliseconds, Lightshot 555.76 milliseconds">
+                <div class="bar-row rustshot"><span>RustShot</span><div><i style="--bar: 35.24%"></i></div><b>195.85</b></div>
+                <div class="bar-row competitor"><span>Lightshot</span><div><i style="--bar: 100%"></i></div><b>555.76</b></div>
+              </div>
+            </article>
+
+            <article class="benchmark-card" data-reveal>
+              <div class="benchmark-topline">
+                <span>Copy completion</span>
+                <strong>70.61% faster</strong>
+              </div>
+              <div class="metric-value">35.90 <small>ms</small></div>
+              <div class="bar-pair" aria-label="Copy completion: RustShot 35.90 milliseconds, Lightshot 122.16 milliseconds">
+                <div class="bar-row rustshot"><span>RustShot</span><div><i style="--bar: 29.39%"></i></div><b>35.90</b></div>
+                <div class="bar-row competitor"><span>Lightshot</span><div><i style="--bar: 100%"></i></div><b>122.16</b></div>
+              </div>
+            </article>
+
+            <article class="benchmark-card" data-reveal data-delay="1">
+              <div class="benchmark-topline">
+                <span>Overlay activation</span>
+                <strong>45.49% faster</strong>
+              </div>
+              <div class="metric-value">51.49 <small>ms</small></div>
+              <div class="bar-pair" aria-label="Overlay activation: RustShot 51.49 milliseconds, Lightshot 94.46 milliseconds">
+                <div class="bar-row rustshot"><span>RustShot</span><div><i style="--bar: 54.51%"></i></div><b>51.49</b></div>
+                <div class="bar-row competitor"><span>Lightshot</span><div><i style="--bar: 100%"></i></div><b>94.46</b></div>
+              </div>
+            </article>
+          </div>
+
+          <div class="benchmark-note" data-reveal>
+            <div class="benchmark-proof">
+              <strong>30 / 30</strong>
+              <span>successful trials for both apps</span>
+            </div>
+            <p>
+              Recorded on Windows 10 (build 19045), with 3 warmups and deterministic pixel and
+              dimension validation. Results describe this machine and configuration.
+            </p>
+            <a href="https://github.com/CodyKoInABox/rustshot/blob/main/benchmarks/reports/20260802-112030.md">
+              Read the methodology <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section workflow" id="features">
+        <div class="shell">
+          <div class="section-heading compact" data-reveal>
+            <div>
+              <div class="eyebrow"><span></span> One focused workflow</div>
+              <h2>Capture. Make it clear.<br>Move on.</h2>
+            </div>
+            <p>
+              From hotkey to clipboard, the tools you need are close at hand and the interface
+              stays out of the frame.
+            </p>
+          </div>
+
+          <div class="workflow-steps">
+            <article data-reveal>
+              <span class="step-number">01</span>
+              <div class="step-icon crosshair" aria-hidden="true"><i></i></div>
+              <h3>Capture precisely</h3>
+              <p>Select a resizable region, the monitor under your pointer, or your full virtual desktop.</p>
+              <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>F10</kbd>
+            </article>
+            <article data-reveal data-delay="1">
+              <span class="step-number">02</span>
+              <div class="step-icon markup" aria-hidden="true"><i></i></div>
+              <h3>Say what matters</h3>
+              <p>Draw, highlight, label, crop, pixelate, or permanently redact—all without leaving the capture.</p>
+              <span class="tool-list">Pen · Arrow · Text · Shapes · More</span>
+            </article>
+            <article data-reveal data-delay="2">
+              <span class="step-number">03</span>
+              <div class="step-icon checkmark" aria-hidden="true"><i></i></div>
+              <h3>Share and move on</h3>
+              <p>Copy losslessly, save as PNG or JPEG, print natively, or automate copy and save.</p>
+              <kbd>Enter</kbd> <span class="key-caption">to copy</span>
+            </article>
+          </div>
+
+          <div class="feature-bento">
+            <article class="bento-card bento-editor" data-reveal>
+              <div class="bento-copy">
+                <span class="feature-label">Editable annotations</span>
+                <h3>Change your mind.<br>Nothing is baked in.</h3>
+                <p>Move, resize, and restyle annotations until export, with dependable undo and redo.</p>
+              </div>
+              <div class="layers-demo" aria-hidden="true">
+                <div class="layer layer-back"><span>Screenshot</span></div>
+                <div class="layer layer-mid"><span>Rectangle</span></div>
+                <div class="layer layer-front"><span>Callout</span><i>Editable</i></div>
+              </div>
+            </article>
+
+            <article class="bento-card bento-tools" data-reveal data-delay="1">
+              <span class="feature-label">A complete toolkit</span>
+              <h3>Every mark has a purpose.</h3>
+              <div class="tool-cloud" aria-label="Annotation tools">
+                <span><b>P</b> Pen</span><span><b>H</b> Highlight</span><span><b>A</b> Arrow</span>
+                <span><b>R</b> Rectangle</span><span><b>T</b> Text</span><span><b>Q</b> Callout</span>
+                <span><b>B</b> Redact</span><span><b>M</b> Pixelate</span><span><b>G</b> Crop</span>
+              </div>
+            </article>
+
+            <article class="bento-card bento-automation" data-reveal>
+              <span class="feature-label">Your defaults, remembered</span>
+              <h3>Set the flow once.</h3>
+              <p>Configure global shortcuts, capture scope, cursor visibility, format, quality, automatic copy, and automatic save.</p>
+              <div class="settings-demo" aria-hidden="true">
+                <span><i class="toggle on"></i> Copy after capture</span>
+                <span><i class="toggle on"></i> Save automatically</span>
+                <span><i class="toggle"></i> Include cursor</span>
+              </div>
+            </article>
+
+            <article class="bento-card bento-native" data-reveal data-delay="1">
+              <span class="native-orbit" aria-hidden="true"><img src="assets/rustshot-icon.png" alt="" width="84" height="84"></span>
+              <div>
+                <span class="feature-label">Built native</span>
+                <h3>No browser.<br>No webview runtime.</h3>
+                <p>A compact Windows app, available from the tray whenever you need it.</p>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section privacy" id="privacy">
+        <div class="shell privacy-grid">
+          <div class="privacy-visual" data-reveal aria-hidden="true">
+            <div class="privacy-rings"><i></i><i></i><i></i></div>
+            <div class="privacy-shield">
+              <svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6l-7-3Z"/><path d="m9 12 2 2 4-5"/></svg>
+            </div>
+            <span class="privacy-tag tag-one">No telemetry</span>
+            <span class="privacy-tag tag-two">No cloud account</span>
+            <span class="privacy-tag tag-three">No upload service</span>
+          </div>
+          <div class="privacy-copy" data-reveal data-delay="1">
+            <div class="eyebrow"><span></span> Your screen stays yours</div>
+            <h2>Private by architecture,<br>not by toggle.</h2>
+            <p>
+              RustShot works locally. There is no account, analytics SDK, upload service, or
+              screenshot data in diagnostic logs. Your captures go only where you send them.
+            </p>
+            <ul class="check-list">
+              <li><span>✓</span> Secure redaction is flattened into opaque pixels on export</li>
+              <li><span>✓</span> Pixelation is applied directly to exported pixels</li>
+              <li><span>✓</span> Diagnostic reports are local and reviewable before sharing</li>
+            </ul>
+            <a class="text-link" href="https://github.com/CodyKoInABox/rustshot/blob/main/SECURITY.md">
+              Read the security policy <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section get-started" id="download">
+        <div class="shell">
+          <div class="download-card" data-reveal>
+            <div class="download-card-copy">
+              <img src="assets/rustshot-icon.png" alt="" width="72" height="72">
+              <div>
+                <div class="eyebrow"><span></span> Ready when you are</div>
+                <h2>A faster screenshot<br>is one download away.</h2>
+                <p>No installer required. Download the portable ZIP, extract it, and run RustShot.</p>
+                <div class="hero-actions">
+                  <a class="button button-primary" href="https://github.com/CodyKoInABox/rustshot/releases">
+                    <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0 0 5-5m-5 5-5-5M5 21h14"/></svg>
+                    Download for Windows
+                  </a>
+                  <a class="button button-ghost" href="https://github.com/CodyKoInABox/rustshot">View source</a>
+                </div>
+              </div>
+            </div>
+            <ol class="install-steps">
+              <li><span>1</span><p><strong>Download</strong>The latest Windows x64 ZIP</p></li>
+              <li><span>2</span><p><strong>Extract</strong>Anywhere you keep your apps</p></li>
+              <li><span>3</span><p><strong>Run</strong><code>rustshot.exe</code>—that's it</p></li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section class="section faq">
+        <div class="shell faq-grid">
+          <div data-reveal>
+            <div class="eyebrow"><span></span> The practical details</div>
+            <h2>Good to know.</h2>
+          </div>
+          <div class="faq-list" data-reveal data-delay="1">
+            <details>
+              <summary>Which systems does RustShot support?<span></span></summary>
+              <p>RustShot is a 64-bit native application for Windows 10 and Windows 11.</p>
+            </details>
+            <details>
+              <summary>Does it need an installer or an account?<span></span></summary>
+              <p>No. RustShot is distributed as a portable ZIP and does not require an account.</p>
+            </details>
+            <details>
+              <summary>Where do my screenshots go?<span></span></summary>
+              <p>You choose. Copy to the clipboard, save manually, or configure a local automatic-save folder.</p>
+            </details>
+            <details>
+              <summary>Can I verify the performance claims?<span></span></summary>
+              <p>Yes. The benchmark driver, methodology, validation rules, and aggregate report are all public in the repository.</p>
+            </details>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-top">
+        <a class="brand" href="#top" aria-label="RustShot home">
+          <img src="assets/rustshot-icon.png" alt="" width="40" height="40">
+          <span><strong>Rust</strong>Shot</span>
+        </a>
+        <p>Fast, focused screenshots for Windows.</p>
+        <nav aria-label="Footer navigation">
+          <a href="https://github.com/CodyKoInABox/rustshot/releases">Download</a>
+          <a href="https://github.com/CodyKoInABox/rustshot">GitHub</a>
+          <a href="https://github.com/CodyKoInABox/rustshot/blob/main/SUPPORT.md">Support</a>
+          <a href="https://github.com/CodyKoInABox/rustshot/blob/main/LICENSE">MIT License</a>
+        </nav>
+      </div>
+      <div class="shell footer-bottom">
+        <span>© <span data-year>2026</span> RustShot</span>
+        <span>Open source. Local first. Built with Rust.</span>
+      </div>
+    </footer>
+  </body>
+</html>
