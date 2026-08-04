@@ -395,14 +395,15 @@ summary:focus-visible {
 
 .hero-stats dt {
   margin-bottom: 4px;
-  font-size: 1.35rem;
+  color: var(--orange-light);
+  font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: -0.04em;
 }
 
 .hero-stats dt span {
-  color: #888a91;
-  font-size: 0.68rem;
+  color: var(--orange-light);
+  font-size: 1rem;
   font-weight: 650;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -780,7 +781,7 @@ summary:focus-visible {
 .benchmark-card {
   position: relative;
   overflow: hidden;
-  min-height: 330px;
+  min-height: 370px;
   padding: 30px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -826,19 +827,30 @@ summary:focus-visible {
 }
 
 .metric-value {
-  margin: 24px 0 38px;
-  font-size: clamp(2.3rem, 4vw, 3.6rem);
+  margin: 25px 0 0;
+  color: var(--orange-light);
+  font-size: clamp(3rem, 5vw, 4.7rem);
   font-weight: 680;
   letter-spacing: -0.06em;
   line-height: 1;
 }
 
 .metric-value small {
-  color: #6f727a;
-  font-size: 0.75rem;
+  display: block;
+  margin-top: 10px;
+  color: #d0d1d4;
+  font-size: 0.82rem;
   font-weight: 650;
-  letter-spacing: 0;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+
+.metric-explainer {
+  min-height: 45px;
+  margin: 17px 0 27px;
+  color: #858890;
+  font-size: 0.76rem;
+  line-height: 1.55;
 }
 
 .bar-pair {
@@ -849,7 +861,7 @@ summary:focus-visible {
 
 .bar-row {
   display: grid;
-  grid-template-columns: 73px minmax(0, 1fr) 54px;
+  grid-template-columns: 73px minmax(0, 1fr) 78px;
   align-items: center;
   gap: 11px;
   color: #868990;
@@ -875,7 +887,9 @@ summary:focus-visible {
 
 .bar-row b {
   color: #bfc0c4;
+  font-size: 0.62rem;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   text-align: right;
 }
 
@@ -1714,9 +1728,9 @@ kbd {
   .hero-lede { font-size: 1rem; }
   .hero-actions { flex-direction: column; }
   .hero-actions .button { width: 100%; }
-  .hero-stats { margin-top: 48px; flex-wrap: wrap; gap: 20px 0; }
-  .hero-stats > div { min-width: 50%; padding-inline: 16px; }
-  .hero-stats > div:nth-child(3) { padding-left: 0; border-left: 0; }
+  .hero-stats { margin-top: 48px; flex-wrap: nowrap; }
+  .hero-stats > div { width: 33.333%; min-width: 0; padding-inline: 12px; }
+  .hero-stats > div:nth-child(3) { padding-left: 12px; border-left: 1px solid var(--line-strong); }
   .hero-product { width: 100%; padding-inline: 2px; }
   .app-window { transform: none; }
   .capture-canvas { height: 360px; }
@@ -1728,10 +1742,10 @@ kbd {
   .trust-row { justify-content: flex-start; }
   .trust-row span { width: calc(50% - 12px); }
   .section-heading { margin-bottom: 42px; gap: 20px; }
-  .benchmark-card { min-height: 310px; padding: 24px 20px; }
+  .benchmark-card { min-height: 350px; padding: 24px 20px; }
   .benchmark-topline { align-items: flex-start; flex-direction: column; gap: 8px; }
-  .metric-value { margin-block: 23px 32px; }
-  .bar-row { grid-template-columns: 60px minmax(0, 1fr) 47px; gap: 8px; }
+  .metric-value { margin-top: 23px; }
+  .bar-row { grid-template-columns: 60px minmax(0, 1fr) 72px; gap: 8px; }
   .benchmark-note { padding: 22px; }
   .workflow-steps article { padding: 25px; }
   .bento-card { min-height: 420px; padding: 28px 24px; }

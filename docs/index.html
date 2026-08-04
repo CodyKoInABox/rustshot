@@ -6,12 +6,12 @@
     <meta name="theme-color" content="#0b0c0e">
     <meta
       name="description"
-      content="RustShot is a fast, lightweight screenshot and annotation tool for Windows. Capture, edit, redact, and export without a browser runtime or telemetry."
+      content="RustShot is a fast screenshot tool for Windows. In a published comparison with Lightshot, it used 86% less memory and opened capture 45% faster."
     >
     <meta property="og:title" content="RustShot — Capture at the speed of thought">
     <meta
       property="og:description"
-      content="A fast, lightweight, native screenshot and annotation tool for Windows."
+      content="Use 86% less memory, start 65% faster, and copy screenshots 71% faster than Lightshot in our published comparison."
     >
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://codykoinabox.github.io/rustshot/">
@@ -61,8 +61,8 @@
             <div class="eyebrow"><span></span> Native screenshot tool for Windows</div>
             <h1>Capture at the<br><em>speed of thought.</em></h1>
             <p class="hero-lede">
-              RustShot is a fast, lightweight screenshot and annotation tool that stays out of
-              your way—until the instant you need it.
+              In our published comparison with Lightshot, RustShot used 86% less memory, started
+              65% faster, and copied screenshots 71% faster.
             </p>
             <div class="hero-actions">
               <a class="button button-primary" href="https://github.com/CodyKoInABox/rustshot/releases">
@@ -78,16 +78,16 @@
 
             <dl class="hero-stats" aria-label="RustShot benchmark highlights">
               <div>
-                <dt>2.83 <span>MiB</span></dt>
-                <dd>Private memory</dd>
+                <dt>86<span>%</span></dt>
+                <dd>Less memory</dd>
               </div>
               <div>
-                <dt>51.49 <span>ms</span></dt>
-                <dd>Capture activation</dd>
+                <dt>65<span>%</span></dt>
+                <dd>Faster startup</dd>
               </div>
               <div>
-                <dt>0</dt>
-                <dd>Trackers or uploads</dd>
+                <dt>71<span>%</span></dt>
+                <dd>Faster copying</dd>
               </div>
             </dl>
           </div>
@@ -117,7 +117,7 @@
                     <path d="M20 96C63 92 102 66 143 29"/>
                     <path d="m121 27 25-1-4 24"/>
                   </svg>
-                  <div class="callout">Ready in 51 ms</div>
+                  <div class="callout">45% faster capture</div>
                 </div>
                 <div class="editor-toolbar" aria-hidden="true">
                   <span class="tool active"><svg viewBox="0 0 24 24"><path d="m4 20 4-1 11-11-3-3L5 16l-1 4Z"/></svg></span>
@@ -150,61 +150,65 @@
         <div class="shell">
           <div class="section-heading" data-reveal>
             <div>
-              <div class="eyebrow"><span></span> Published black-box benchmark</div>
-              <h2>Fast in the moments<br>that actually matter.</h2>
+              <div class="eyebrow"><span></span> RustShot vs. Lightshot</div>
+              <h2>See how much faster<br>RustShot is.</h2>
             </div>
             <p>
-              RustShot and Lightshot completed the same validated region-capture workflow across
-              30 measured trials. Lower is better in every comparison below.
+              Both apps completed the same screenshot workflow across 30 measured trials. The big
+              numbers show RustShot's improvement; the smaller bars show the measured results.
             </p>
           </div>
 
           <div class="benchmark-grid">
             <article class="benchmark-card benchmark-featured" data-reveal>
               <div class="benchmark-topline">
-                <span>Private memory</span>
-                <strong>86.46% lower</strong>
+                <span>Memory while running</span>
+                <strong>vs. Lightshot</strong>
               </div>
-              <div class="metric-value">2.83 <small>MiB</small></div>
+              <div class="metric-value">86.46% <small>less memory</small></div>
+              <p class="metric-explainer">RustShot used about one-seventh as much private memory.</p>
               <div class="bar-pair" aria-label="Private memory: RustShot 2.83 MiB, Lightshot 20.91 MiB">
-                <div class="bar-row rustshot"><span>RustShot</span><div><i style="--bar: 13.54%"></i></div><b>2.83</b></div>
-                <div class="bar-row competitor"><span>Lightshot</span><div><i style="--bar: 100%"></i></div><b>20.91</b></div>
+                <div class="bar-row rustshot"><span>RustShot</span><div><i style="--bar: 13.54%"></i></div><b>2.83 MiB</b></div>
+                <div class="bar-row competitor"><span>Lightshot</span><div><i style="--bar: 100%"></i></div><b>20.91 MiB</b></div>
               </div>
             </article>
 
             <article class="benchmark-card" data-reveal data-delay="1">
               <div class="benchmark-topline">
-                <span>Cold readiness</span>
-                <strong>64.76% faster</strong>
+                <span>Startup</span>
+                <strong>vs. Lightshot</strong>
               </div>
-              <div class="metric-value">195.85 <small>ms</small></div>
+              <div class="metric-value">64.76% <small>faster startup</small></div>
+              <p class="metric-explainer">RustShot was ready in about one-third of the time.</p>
               <div class="bar-pair" aria-label="Cold readiness: RustShot 195.85 milliseconds, Lightshot 555.76 milliseconds">
-                <div class="bar-row rustshot"><span>RustShot</span><div><i style="--bar: 35.24%"></i></div><b>195.85</b></div>
-                <div class="bar-row competitor"><span>Lightshot</span><div><i style="--bar: 100%"></i></div><b>555.76</b></div>
+                <div class="bar-row rustshot"><span>RustShot</span><div><i style="--bar: 35.24%"></i></div><b>195.85 ms</b></div>
+                <div class="bar-row competitor"><span>Lightshot</span><div><i style="--bar: 100%"></i></div><b>555.76 ms</b></div>
               </div>
             </article>
 
             <article class="benchmark-card" data-reveal>
               <div class="benchmark-topline">
-                <span>Copy completion</span>
-                <strong>70.61% faster</strong>
+                <span>Copy to clipboard</span>
+                <strong>vs. Lightshot</strong>
               </div>
-              <div class="metric-value">35.90 <small>ms</small></div>
+              <div class="metric-value">70.61% <small>faster copying</small></div>
+              <p class="metric-explainer">Your screenshot reaches the clipboard in less than one-third of the time.</p>
               <div class="bar-pair" aria-label="Copy completion: RustShot 35.90 milliseconds, Lightshot 122.16 milliseconds">
-                <div class="bar-row rustshot"><span>RustShot</span><div><i style="--bar: 29.39%"></i></div><b>35.90</b></div>
-                <div class="bar-row competitor"><span>Lightshot</span><div><i style="--bar: 100%"></i></div><b>122.16</b></div>
+                <div class="bar-row rustshot"><span>RustShot</span><div><i style="--bar: 29.39%"></i></div><b>35.90 ms</b></div>
+                <div class="bar-row competitor"><span>Lightshot</span><div><i style="--bar: 100%"></i></div><b>122.16 ms</b></div>
               </div>
             </article>
 
             <article class="benchmark-card" data-reveal data-delay="1">
               <div class="benchmark-topline">
-                <span>Overlay activation</span>
-                <strong>45.49% faster</strong>
+                <span>Capture screen appears</span>
+                <strong>vs. Lightshot</strong>
               </div>
-              <div class="metric-value">51.49 <small>ms</small></div>
+              <div class="metric-value">45.49% <small>faster capture</small></div>
+              <p class="metric-explainer">The capture screen appeared in just over half the time.</p>
               <div class="bar-pair" aria-label="Overlay activation: RustShot 51.49 milliseconds, Lightshot 94.46 milliseconds">
-                <div class="bar-row rustshot"><span>RustShot</span><div><i style="--bar: 54.51%"></i></div><b>51.49</b></div>
-                <div class="bar-row competitor"><span>Lightshot</span><div><i style="--bar: 100%"></i></div><b>94.46</b></div>
+                <div class="bar-row rustshot"><span>RustShot</span><div><i style="--bar: 54.51%"></i></div><b>51.49 ms</b></div>
+                <div class="bar-row competitor"><span>Lightshot</span><div><i style="--bar: 100%"></i></div><b>94.46 ms</b></div>
               </div>
             </article>
           </div>
