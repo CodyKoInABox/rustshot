@@ -4,7 +4,7 @@ All notable user-visible changes to RustShot are recorded here. RustShot follows
 versioning for the desktop application and its persisted configuration, not for the unpublished
 internal Rust library crate.
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-08-03
 
 ### Added
 
