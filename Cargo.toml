@@ -32,7 +32,7 @@ softbuffer = "0.4"
 thiserror = "2.0"
 tiny-skia = "0.12"
 toml = "0.9"
-tray-icon = "0.24"
+tray-icon = "0.26"
 winit = "0.30"
 xcap = "0.9"
 
