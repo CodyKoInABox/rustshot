@@ -954,11 +954,18 @@ fn output_format_from_path(path: &Path) -> Option<OutputFormat> {
 fn open_path(path: &Path) -> Result<()> {
     std::fs::create_dir_all(path)
         .with_context(|| format!("could not create `{}`", path.display()))?;
-    Command::new("explorer.exe")
+    Command::new(explorer_path(std::env::var_os("SystemRoot"))?)
         .arg(path)
         .spawn()
         .with_context(|| format!("could not open `{}`", path.display()))?;
     Ok(())
+}
+
+/// Resolves `explorer.exe` under the Windows directory. A bare name would let
+/// `CreateProcess` search the application directory and `PATH` first.
+fn explorer_path(system_root: Option<std::ffi::OsString>) -> Result<PathBuf> {
+    let system_root = system_root.context("the SystemRoot environment variable is not set")?;
+    Ok(PathBuf::from(system_root).join("explorer.exe"))
 }
 
 fn show_error(title: &str, description: &str) {
@@ -973,7 +980,7 @@ fn show_error(title: &str, description: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        commit_settings, ensure_extension, output_format_from_path, OutputFormat,
+        commit_settings, ensure_extension, explorer_path, output_format_from_path, OutputFormat,
         SettingsCommitBackend,
     };
     use anyhow::{bail, Result};
@@ -1057,6 +1064,15 @@ mod tests {
             output_format_from_path(std::path::Path::new("capture.unsupported")),
             None
         );
+    }
+
+    #[test]
+    fn explorer_is_resolved_under_the_system_root() {
+        assert_eq!(
+            explorer_path(Some(r"C:\Windows".into())).unwrap(),
+            PathBuf::from(r"C:\Windows\explorer.exe")
+        );
+        assert!(explorer_path(None).is_err());
     }
 
     #[test]

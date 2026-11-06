@@ -65,7 +65,8 @@ After selecting a region, annotations remain editable until export.
 | `R`, `E` | Rectangle, ellipse |
 | `T`, `Q` | Text box, callout; `Shift+Enter` inserts a line break |
 | `B`, `M` | Secure redaction, pixelation |
-| `D` / `Delete` | Delete the object under the pointer or selected object |
+| `D` | Eraser tool; click an object to delete it |
+| `Delete` | Delete the selected object |
 | `G` | Crop the captured region |
 | `I`, `K` | Eyedropper, custom color picker |
 | `U` / `Ctrl+Z` | Undo |

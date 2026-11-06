@@ -1853,7 +1853,7 @@ fn character_is(key: &Key, expected: &str) -> bool {
 }
 
 fn draw_source_dimmed(buffer: &mut [u32], source: &Frame, brightness: u8) {
-    for (destination, pixel) in buffer.iter_mut().zip(source.rgba().chunks_exact(4)) {
+    for (destination, pixel) in buffer.iter_mut().zip(source.rgba().as_chunks::<4>().0) {
         let red = u32::from(pixel[0]) * u32::from(brightness) / 100;
         let green = u32::from(pixel[1]) * u32::from(brightness) / 100;
         let blue = u32::from(pixel[2]) * u32::from(brightness) / 100;
