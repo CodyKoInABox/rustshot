@@ -115,8 +115,10 @@ fn rgba_to_bgra(source: &[u8], destination: &mut [u8]) -> Result<()> {
     }
 
     for (rgba, bgra) in source
-        .chunks_exact(RGBA_CHANNELS)
-        .zip(destination.chunks_exact_mut(RGBA_CHANNELS))
+        .as_chunks::<RGBA_CHANNELS>()
+        .0
+        .iter()
+        .zip(destination.as_chunks_mut::<RGBA_CHANNELS>().0.iter_mut())
     {
         bgra.copy_from_slice(&[rgba[2], rgba[1], rgba[0], u8::MAX]);
     }
