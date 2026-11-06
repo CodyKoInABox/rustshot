@@ -11,7 +11,7 @@ use chrono::Local;
 use global_hotkey::{hotkey::HotKey, GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use rustshot::{
-    config::{config_path, Config, MonitorScope},
+    config::{config_path, Config, ConfigError, MonitorScope},
     encode::{encode_and_save_atomic, encode_and_save_replace_atomic, EncodeOptions, OutputFormat},
     frame::Frame,
     platform::windows::{
@@ -92,11 +92,16 @@ pub fn run() -> Result<()> {
         .context("could not create the Windows event loop")?;
     wire_event_sources(&event_loop.create_proxy());
 
-    let config = load_initial_config();
+    let (config, config_recovery) = load_initial_config();
     let open_settings_on_start = std::env::args_os()
         .skip(1)
         .any(|argument| argument == "--settings");
-    let mut app = RustshotApp::new(event_loop.create_proxy(), config, open_settings_on_start);
+    let mut app = RustshotApp::new(
+        event_loop.create_proxy(),
+        config,
+        config_recovery,
+        open_settings_on_start,
+    );
     event_loop
         .run_app(&mut app)
         .context("Rustshot's event loop stopped unexpectedly")
@@ -119,7 +124,8 @@ fn wire_event_sources(proxy: &EventLoopProxy<AppEvent>) {
     }));
 }
 
-fn load_initial_config() -> Config {
+/// Returns the loaded settings and whether the file exists but could not be read.
+fn load_initial_config() -> (Config, bool) {
     match Config::load() {
         Ok(config) => {
             if config_path().is_ok_and(|path| !path.exists()) {
@@ -127,18 +133,66 @@ fn load_initial_config() -> Config {
                     show_error("Could not create settings", &error.to_string());
                 }
             }
-            config
+            (config, false)
         }
         Err(error) => {
             show_error(
                 "Could not load settings",
                 &format!(
-                    "{error}\n\nRustshot will use safe defaults. Open Settings to repair the configuration."
+                    "{error}\n\nRustshot will use safe defaults and will not overwrite the existing configuration until you save Settings. The unreadable file is backed up first."
                 ),
             );
-            Config::default()
+            (Config::default(), true)
         }
     }
+}
+
+fn preserve_unreadable_config() -> Result<()> {
+    let path = config_path()?;
+    if !path.exists() {
+        return Ok(());
+    }
+    let backup = unused_backup_path(&path);
+    std::fs::copy(&path, &backup).with_context(|| {
+        format!(
+            "could not back up `{}` to `{}`",
+            path.display(),
+            backup.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn unused_backup_path(path: &Path) -> PathBuf {
+    let backup = path.with_extension("toml.bak");
+    if !backup.exists() {
+        return backup;
+    }
+    path.with_extension(format!("toml.bak.{}", Local::now().format("%Y%m%d-%H%M%S")))
+}
+
+/// Updates remembered editor choices, persisting them only when the file on
+/// disk is readable. After a failed load, saving would replace data this build
+/// cannot parse, so the choice stays in memory until Settings is saved.
+fn remember_editor_preferences(
+    config: &mut Config,
+    preferences: EditorPreferences,
+    config_recovery: bool,
+    save: impl FnOnce(&Config) -> Result<(), ConfigError>,
+) -> Result<(), ConfigError> {
+    if config.last_editor_tool == preferences.tool
+        && config.editor_color == preferences.color
+        && config.editor_stroke_width == preferences.stroke_width
+    {
+        return Ok(());
+    }
+    config.last_editor_tool = preferences.tool;
+    config.editor_color = preferences.color;
+    config.editor_stroke_width = preferences.stroke_width;
+    if config_recovery {
+        return Ok(());
+    }
+    save(config)
 }
 
 struct SettingsSession {
@@ -149,6 +203,7 @@ struct SettingsSession {
 struct RustshotApp {
     proxy: EventLoopProxy<AppEvent>,
     config: Config,
+    config_recovery: bool,
     hotkeys: Option<RegisteredHotkeys>,
     tray: Option<TrayIcon>,
     overlay: Option<Overlay>,
@@ -159,10 +214,16 @@ struct RustshotApp {
 }
 
 impl RustshotApp {
-    fn new(proxy: EventLoopProxy<AppEvent>, config: Config, open_settings_on_start: bool) -> Self {
+    fn new(
+        proxy: EventLoopProxy<AppEvent>,
+        config: Config,
+        config_recovery: bool,
+        open_settings_on_start: bool,
+    ) -> Self {
         Self {
             proxy,
             config,
+            config_recovery,
             hotkeys: None,
             tray: None,
             overlay: None,
@@ -457,16 +518,12 @@ impl RustshotApp {
         let Some(preferences) = self.overlay.as_ref().map(Overlay::editor_preferences) else {
             return;
         };
-        if self.config.last_editor_tool == preferences.tool
-            && self.config.editor_color == preferences.color
-            && self.config.editor_stroke_width == preferences.stroke_width
-        {
-            return;
-        }
-        self.config.last_editor_tool = preferences.tool;
-        self.config.editor_color = preferences.color;
-        self.config.editor_stroke_width = preferences.stroke_width;
-        if let Err(error) = self.config.save() {
+        if let Err(error) = remember_editor_preferences(
+            &mut self.config,
+            preferences,
+            self.config_recovery,
+            Config::save,
+        ) {
             show_error("Could not remember editor preferences", &error.to_string());
         }
     }
@@ -632,7 +689,12 @@ impl SettingsCommitBackend for RustshotApp {
     }
 
     fn persist_settings(&mut self, config: &Config) -> Result<()> {
-        config.save().map_err(anyhow::Error::new)
+        if self.config_recovery {
+            preserve_unreadable_config()?;
+        }
+        config.save().map_err(anyhow::Error::new)?;
+        self.config_recovery = false;
+        Ok(())
     }
 
     fn restore_shortcuts(&mut self, config: &Config, should_be_registered: bool) -> Result<()> {
@@ -973,12 +1035,15 @@ fn show_error(title: &str, description: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        commit_settings, ensure_extension, output_format_from_path, OutputFormat,
-        SettingsCommitBackend,
+        commit_settings, ensure_extension, output_format_from_path, remember_editor_preferences,
+        unused_backup_path, OutputFormat, SettingsCommitBackend,
     };
     use anyhow::{bail, Result};
-    use rustshot::config::Config;
+    use chrono::Local;
+    use rustshot::config::{Config, EditorTool, RgbColor};
     use std::path::PathBuf;
+
+    use crate::overlay::EditorPreferences;
 
     #[derive(Default)]
     struct FakeSettingsBackend {
@@ -1057,6 +1122,69 @@ mod tests {
             output_format_from_path(std::path::Path::new("capture.unsupported")),
             None
         );
+    }
+
+    #[test]
+    fn unreadable_config_is_not_overwritten_by_editor_preferences() {
+        let directory = std::env::temp_dir().join(format!(
+            "rustshot-app-test-{}-{}",
+            std::process::id(),
+            Local::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("config.toml");
+        let unreadable = "config_version = 2\n";
+        std::fs::write(&path, unreadable).unwrap();
+
+        let mut config = Config::default();
+        let preferences = EditorPreferences {
+            tool: EditorTool::Arrow,
+            color: RgbColor::new(1, 2, 3),
+            stroke_width: 2,
+        };
+        remember_editor_preferences(&mut config, preferences, true, |config| {
+            config.save_to(&path)
+        })
+        .unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), unreadable);
+        assert_eq!(config.last_editor_tool, EditorTool::Arrow);
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn readable_config_persists_editor_preferences() {
+        let mut config = Config::default();
+        let mut saved = None;
+        let preferences = EditorPreferences {
+            tool: EditorTool::Arrow,
+            color: RgbColor::new(1, 2, 3),
+            stroke_width: 2,
+        };
+        remember_editor_preferences(&mut config, preferences, false, |config| {
+            saved = Some(config.clone());
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(saved.as_ref(), Some(&config));
+        assert_eq!(config.editor_color, RgbColor::new(1, 2, 3));
+    }
+
+    #[test]
+    fn unused_backup_path_never_replaces_an_existing_backup() {
+        let directory = std::env::temp_dir().join(format!(
+            "rustshot-backup-test-{}-{}",
+            std::process::id(),
+            Local::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("config.toml");
+        assert_eq!(unused_backup_path(&path), directory.join("config.toml.bak"));
+
+        std::fs::write(directory.join("config.toml.bak"), b"older").unwrap();
+        assert_ne!(unused_backup_path(&path), directory.join("config.toml.bak"));
+        std::fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]
