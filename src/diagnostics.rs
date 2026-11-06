@@ -169,7 +169,7 @@ mod tests {
             "a recent error\n",
         );
 
-        assert!(report.contains("Version: 1.0.0"));
+        assert!(report.contains(concat!("Version: ", env!("CARGO_PKG_VERSION"))));
         assert!(report.contains("Configuration schema: 1"));
         assert!(report.contains("a recent error"));
     }

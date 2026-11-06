@@ -183,8 +183,10 @@ fn composite_cursor(frame: Frame) -> Result<Frame> {
     let mut rgba = frame.into_rgba();
     let mut dib = DibSurface::new(width, height, rgba.len())?;
     for (source, destination) in rgba
-        .chunks_exact(4)
-        .zip(dib.pixels_mut().chunks_exact_mut(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(dib.pixels_mut().as_chunks_mut::<4>().0.iter_mut())
     {
         destination.copy_from_slice(&[source[2], source[1], source[0], u8::MAX]);
     }
@@ -212,8 +214,10 @@ fn composite_cursor(frame: Frame) -> Result<Frame> {
 
     for (source, destination) in dib
         .pixels_mut()
-        .chunks_exact(4)
-        .zip(rgba.chunks_exact_mut(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(rgba.as_chunks_mut::<4>().0.iter_mut())
     {
         destination.copy_from_slice(&[source[2], source[1], source[0], u8::MAX]);
     }
