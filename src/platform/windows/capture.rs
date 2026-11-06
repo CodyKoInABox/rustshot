@@ -117,12 +117,6 @@ pub fn capture_virtual_desktop_with_cursor(include_cursor: bool) -> Result<Frame
     let byte_len = rgba_len(width, height)?;
     let mut rgba = vec![0_u8; byte_len];
 
-    // Pixels outside real monitor rectangles should remain visible black rather
-    // than transparent when the virtual desktop has an irregular shape.
-    for alpha in rgba.iter_mut().skip(3).step_by(RGBA_CHANNELS) {
-        *alpha = u8::MAX;
-    }
-
     let destination_stride = usize::try_from(width)
         .context("virtual desktop width does not fit this platform")?
         .checked_mul(RGBA_CHANNELS)
@@ -131,6 +125,9 @@ pub fn capture_virtual_desktop_with_cursor(include_cursor: bool) -> Result<Frame
     for capture in captures {
         composite_monitor(&capture, left, top, destination_stride, &mut rgba)?;
     }
+    // Runs after compositing: monitor pixels carry the capture's alpha, and gaps
+    // between irregular monitor layouts must stay visible black, not transparent.
+    force_opaque_alpha(&mut rgba);
 
     let frame = Frame::new(origin, width, height, rgba).context("invalid virtual desktop frame")?;
     include_cursor_if_requested(frame, include_cursor)
@@ -227,13 +224,20 @@ fn capture_monitor(monitor: &Monitor) -> Result<Frame> {
         .capture_image()
         .with_context(|| format!("failed to capture monitor at ({x}, {y})"))?;
 
-    Frame::new(
-        PhysicalPoint::new(x, y),
-        image.width(),
-        image.height(),
-        image.into_raw(),
-    )
-    .context("monitor capture returned an invalid frame")
+    let width = image.width();
+    let height = image.height();
+    let mut rgba = image.into_raw();
+    force_opaque_alpha(&mut rgba);
+    Frame::new(PhysicalPoint::new(x, y), width, height, rgba)
+        .context("monitor capture returned an invalid frame")
+}
+
+/// Screen captures do not reliably fill the alpha byte. Leaving it at zero makes
+/// PNG files and clipboard consumers treat the screenshot as transparent.
+fn force_opaque_alpha(rgba: &mut [u8]) {
+    for alpha in rgba.iter_mut().skip(3).step_by(RGBA_CHANNELS) {
+        *alpha = u8::MAX;
+    }
 }
 
 fn composite_monitor(
@@ -412,7 +416,34 @@ impl Drop for DibSurface {
 
 #[cfg(test)]
 mod tests {
-    use super::{composite_monitor, rgba_len, CapturedMonitor};
+    use super::{composite_monitor, force_opaque_alpha, rgba_len, CapturedMonitor};
+
+    #[test]
+    fn forced_alpha_makes_every_capture_pixel_opaque() {
+        let mut rgba = vec![10, 20, 30, 0, 40, 50, 60, 0];
+
+        force_opaque_alpha(&mut rgba);
+
+        assert_eq!(rgba, [10, 20, 30, 255, 40, 50, 60, 255]);
+    }
+
+    #[test]
+    fn composited_zero_alpha_monitor_pixels_become_opaque() {
+        let capture = CapturedMonitor {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+            rgba: vec![1, 2, 3, 0],
+        };
+        let mut destination = vec![0; 4];
+
+        composite_monitor(&capture, 0, 0, 4, &mut destination)
+            .expect("valid monitor should composite");
+        force_opaque_alpha(&mut destination);
+
+        assert_eq!(destination, [1, 2, 3, 255]);
+    }
 
     #[test]
     fn monitor_pixels_are_composited_at_their_virtual_desktop_offset() {
