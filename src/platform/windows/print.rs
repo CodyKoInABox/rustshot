@@ -170,7 +170,7 @@ fn print_bitmap(frame: &Frame) -> Result<PrintBitmap> {
     let width = i32::try_from(frame.width()).context("image width exceeds the GDI limit")?;
     let height = i32::try_from(frame.height()).context("image height exceeds the GDI limit")?;
     let mut pixels = Vec::with_capacity(frame.rgba().len());
-    for rgba in frame.rgba().chunks_exact(RGBA_CHANNELS) {
+    for rgba in frame.rgba().as_chunks::<RGBA_CHANNELS>().0 {
         // BI_RGB's fourth byte is unused. Zero avoids printer-driver alpha quirks.
         pixels.extend_from_slice(&[rgba[2], rgba[1], rgba[0], 0]);
     }

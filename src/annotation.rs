@@ -1487,7 +1487,12 @@ fn blend_straight_pixel(destination: &mut [u8], source: [u8; 4]) {
 
 fn blend_premultiplied_over_straight(destination: &mut [u8], source: &[u8]) {
     debug_assert_eq!(destination.len(), source.len());
-    for (destination, source) in destination.chunks_exact_mut(4).zip(source.chunks_exact(4)) {
+    for (destination, source) in destination
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(source.as_chunks::<4>().0)
+    {
         let source_alpha = u32::from(source[3]);
         if source_alpha == 0 {
             continue;

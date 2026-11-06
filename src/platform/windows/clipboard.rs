@@ -107,16 +107,20 @@ fn create_dibv5(frame: &Frame) -> Result<OwnedGlobalMemory> {
     Ok(memory)
 }
 
+/// Always writes opaque alpha: apps that honor the DIB alpha mask would
+/// otherwise paste a zero-alpha capture as a transparent image.
 fn rgba_to_bgra(source: &[u8], destination: &mut [u8]) -> Result<()> {
     if source.len() != destination.len() || !source.len().is_multiple_of(RGBA_CHANNELS) {
         bail!("invalid RGBA clipboard buffer length");
     }
 
     for (rgba, bgra) in source
-        .chunks_exact(RGBA_CHANNELS)
-        .zip(destination.chunks_exact_mut(RGBA_CHANNELS))
+        .as_chunks::<RGBA_CHANNELS>()
+        .0
+        .iter()
+        .zip(destination.as_chunks_mut::<RGBA_CHANNELS>().0.iter_mut())
     {
-        bgra.copy_from_slice(&[rgba[2], rgba[1], rgba[0], rgba[3]]);
+        bgra.copy_from_slice(&[rgba[2], rgba[1], rgba[0], u8::MAX]);
     }
     Ok(())
 }
@@ -186,10 +190,10 @@ mod tests {
     use crate::frame::PhysicalPoint;
 
     #[test]
-    fn converts_rgba_to_bgra() {
+    fn converts_rgba_to_opaque_bgra() {
         let mut output = [0_u8; 8];
-        rgba_to_bgra(&[10, 20, 30, 40, 50, 60, 70, 80], &mut output).unwrap();
-        assert_eq!(output, [30, 20, 10, 40, 70, 60, 50, 80]);
+        rgba_to_bgra(&[10, 20, 30, 0, 50, 60, 70, 40], &mut output).unwrap();
+        assert_eq!(output, [30, 20, 10, 255, 70, 60, 50, 255]);
     }
 
     #[test]
