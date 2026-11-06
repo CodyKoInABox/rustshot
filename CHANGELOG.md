@@ -8,8 +8,7 @@ internal Rust library crate.
 
 ### Fixed
 
-- Screenshots copied to the clipboard or saved as PNG could appear transparent or broken when the
-  cursor was not composited into the capture, which is the case when "include cursor" is off
+- Screenshots copied to the clipboard or saved as PNG could appear transparent or broken
   ([#5](https://github.com/CodyKoInABox/rustshot/issues/5)). Captures and clipboard images are now
   always opaque.
 - An unreadable `config.toml`, such as one written by a newer schema, is no longer overwritten when
